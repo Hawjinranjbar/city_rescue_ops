@@ -1,3 +1,5 @@
+package ui;
+
 import agent.Rescuer;
 import map.CityMap;
 import map.Cell;
@@ -9,20 +11,19 @@ import java.awt.*;
 import java.util.List;
 
 // --------------------
-// لایه: UI Layer
+// لایه: ui Layer
 // --------------------
-// این کلاس پنل گرافیکی اصلی بازیه
-// نقشه، مجروح‌ها، نجات‌دهنده‌ها و مسیرها اینجا نمایش داده می‌شن
-public class GamePanel extends JPanel {
+// این کلاس نقشه کوچک (MiniMap) رو نمایش می‌ده
+// شامل مجروح‌ها، نجات‌دهنده‌ها و موقعیت کلی بیمارستان‌ها
+public class MiniMapPanel extends JPanel {
 
     private CityMap cityMap;
     private List<Rescuer> rescuers;
     private List<Injured> victims;
-    private int tileSize = 32;
 
-    public GamePanel(CityMap cityMap,
-                     List<Rescuer> rescuers,
-                     List<Injured> victims) {
+    private final int tileSize = 6; // اندازه کوچک‌تر برای نمای مینی‌مپ
+
+    public MiniMapPanel(CityMap cityMap, List<Rescuer> rescuers, List<Injured> victims) {
         this.cityMap = cityMap;
         this.rescuers = rescuers;
         this.victims = victims;
@@ -34,7 +35,7 @@ public class GamePanel extends JPanel {
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
 
-        // رسم نقشه (سلول‌ها)
+        // رسم نقشه
         for (int y = 0; y < cityMap.getHeight(); y++) {
             for (int x = 0; x < cityMap.getWidth(); x++) {
                 Cell cell = cityMap.getCell(x, y);
@@ -59,7 +60,7 @@ public class GamePanel extends JPanel {
                     case MEDIUM -> Color.ORANGE;
                     case CRITICAL -> Color.RED;
                 });
-                g.fillOval(pos.getX() * tileSize + 8, pos.getY() * tileSize + 8, 16, 16);
+                g.fillRect(pos.getX() * tileSize, pos.getY() * tileSize, tileSize, tileSize);
             }
         }
 
@@ -67,12 +68,11 @@ public class GamePanel extends JPanel {
         for (Rescuer rescuer : rescuers) {
             Position pos = rescuer.getPosition();
             g.setColor(Color.BLUE);
-            g.fillRect(pos.getX() * tileSize + 4, pos.getY() * tileSize + 4, 24, 24);
+            g.fillRect(pos.getX() * tileSize, pos.getY() * tileSize, tileSize, tileSize);
         }
     }
 
-    // آپدیت داده‌ها و درخواست رسم مجدد
-    public void updateData(CityMap cityMap, List<Rescuer> rescuers, List<Injured> victims) {
+    public void updateMiniMap(CityMap cityMap, List<Rescuer> rescuers, List<Injured> victims) {
         this.cityMap = cityMap;
         this.rescuers = rescuers;
         this.victims = victims;

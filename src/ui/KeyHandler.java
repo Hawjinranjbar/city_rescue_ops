@@ -1,3 +1,5 @@
+package ui;
+
 import agent.Rescuer;
 import playercontrol.DecisionInterface;
 
@@ -6,7 +8,7 @@ import java.awt.event.KeyEvent;
 import java.util.List;
 
 // --------------------
-// لایه: UI Layer
+// لایه: ui Layer
 // --------------------
 // این کلاس ورودی‌های صفحه‌کلید رو مدیریت می‌کنه
 // مثلاً برای تعویض نجات‌دهنده با کلید Tab یا اجرای عملیات با Enter

@@ -13,7 +13,7 @@ import java.util.List;
 public interface DecisionInterface {
 
     /**
-     * انتخاب مجروح هدف توسط بازیکن (یا UI).
+     * انتخاب مجروح هدف توسط بازیکن (یا ui).
      * @param rescuer نجات‌دهنده فعلی
      * @param candidates لیست مجروح‌های قابل نجات
      * @return مجروح انتخاب‌شده یا null اگه پلیر هیچ‌کدوم رو انتخاب نکرد
