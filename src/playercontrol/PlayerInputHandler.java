@@ -19,7 +19,7 @@ public class PlayerInputHandler implements DecisionInterface {
         // انتخاب اولین مجروح (برای حالت کنسولی یا تست ساده)
         if (candidates.isEmpty()) return null;
 
-        // در آینده: می‌تونی این رو با ورودی کاربر یا UI تکمیل کنی
+        // در آینده: می‌تونی این رو با ورودی کاربر یا ui تکمیل کنی
         return candidates.get(0);
     }
 

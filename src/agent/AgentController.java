@@ -46,7 +46,7 @@ public class AgentController {
     private void moveAlongPath(Rescuer rescuer, List<Position> path) {
         for (Position step : path) {
             rescuer.setPosition(step);
-            // اینجا می‌تونی delay، animation یا repaint UI بزاری
+            // اینجا می‌تونی delay، animation یا repaint ui بزاری
         }
     }
 
