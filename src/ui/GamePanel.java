@@ -51,6 +51,7 @@ public class GamePanel extends JPanel {
         this.viewWidth = 1;
         this.viewHeight = 1;
 
+
         if (cityMap != null) {
             this.viewWidth = Math.max(1, cityMap.getWidth() / 2);
             this.viewHeight = Math.max(1, cityMap.getHeight() / 2);
@@ -61,7 +62,6 @@ public class GamePanel extends JPanel {
             this.viewHeight = 19;
             setPreferredSize(new Dimension(viewWidth * tileSize,
                     viewHeight * tileSize));}
-
 
         setFocusable(true);
         requestFocusInWindow();

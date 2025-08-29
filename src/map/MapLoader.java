@@ -117,6 +117,10 @@ public class MapLoader {
 
                 // --- تعیین نوع سلول ---
 
+                Cell.Type type = Cell.Type.OBSTACLE; // حالت پیش‌فرض: غیرقابل عبور
+                boolean walkable = false;
+
+
 
                 Cell.Type type = Cell.Type.OBSTACLE; // حالت پیش‌فرض: غیرقابل عبور
 
@@ -146,6 +150,22 @@ public class MapLoader {
                                     else if ("rubble".equalsIgnoreCase(value)) type = Cell.Type.OBSTACLE;
                                     else type = Cell.Type.EMPTY;
 
+                                } else if (name.equalsIgnoreCase("walkable")) {
+                                    walkable = Boolean.parseBoolean(value);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // اگر تایل walkable بود ولی نوع مشخص نشد، جاده در نظر بگیر
+                if (walkable && type == Cell.Type.OBSTACLE) {
+                    type = Cell.Type.ROAD;
+                }
+
+                // اگر property نداشت، می‌تونی با GID نوع را تخمین بزنی
+
+
                                     
                                 }
                             }
@@ -154,6 +174,7 @@ public class MapLoader {
                 }
 
                 // اگر property نداشت، می‌تونی با GID نوع را تخمین بزنی
+
 
                 if (gid == 25) type = Cell.Type.HOSPITAL;
                 else if (gid >= 50 && gid <= 70) type = Cell.Type.BUILDING;

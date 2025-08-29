@@ -32,6 +32,7 @@ public final class MoveGuard {
 
         final Cell dest = map.getCell(nx, ny);
 
+
         if (dest == null || dest.isOccupied()) return false;
 
         if (dest == null) return false;
@@ -44,6 +45,7 @@ public final class MoveGuard {
 
         // فقط اجازه‌ی حرکت روی سلول‌های قابل عبور و خالی
         if (!dest.isWalkable() || dest.isOccupied()) return false;
+
 
 
         // فقط اجازه‌ی حرکت روی جاده‌های خالی

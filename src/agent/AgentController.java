@@ -26,6 +26,7 @@ public class AgentController {
     private final IAgentDecision decisionLogic;
     private final CityMap map;
 
+
     private final CollisionMap collisionMap;
 
     public AgentController(CityMap map, CollisionMap collisionMap, IPathFinder pathFinder, IAgentDecision decisionLogic) {
@@ -61,6 +62,7 @@ public class AgentController {
                     target.setBeingRescued(false);
                 }
 
+
             Injured target = (decisionLogic != null)
                     ? decisionLogic.selectVictim(rescuer, candidates)
                     : null;
@@ -79,6 +81,7 @@ public class AgentController {
             } else {
                 // مسیر مسدود شد/نرسید
                 target.setBeingRescued(false);
+
 
             }
             return; // همین تیک کافی است
@@ -99,6 +102,7 @@ public class AgentController {
     private boolean moveAlongPath(Rescuer rescuer, List<Position> path) {
         if (rescuer == null || path == null || path.isEmpty()) return false;
         Position current = rescuer.getPosition();
+
         for (Position step : path) {
             if (step.equals(current)) continue;
             int dir = determineDirection(current, step);
@@ -142,6 +146,19 @@ public class AgentController {
             current = step;
         }
         return true;
+d
+    }
+
+    // تعیین جهت بر اساس دلتا بین دو موقعیت (0=پایین،1=چپ،2=راست،3=بالا)
+    private int determineDirection(Position from, Position to) {
+        int dx = to.getX() - from.getX();
+        int dy = to.getY() - from.getY();
+        if (dx == 1) return 2;      // راست
+        if (dx == -1) return 1;     // چپ
+        if (dy == 1) return 0;      // پایین
+        if (dy == -1) return 3;     // بالا
+        return 0;                   // پیش‌فرض
+
     }
 
 

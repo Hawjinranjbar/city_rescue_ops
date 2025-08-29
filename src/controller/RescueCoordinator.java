@@ -29,7 +29,9 @@ public class RescueCoordinator {
                              List<Hospital> hospitals,
                              CityMap map,
 
+
                              CollisionMap collisionMap,
+
 
                              IPathFinder pathFinder,
                              IAgentDecision decisionLogic) {
@@ -38,7 +40,9 @@ public class RescueCoordinator {
         this.victimManager = victimManager;
         this.hospitals = hospitals;
 
+
         this.agentController = new AgentController(map, collisionMap, pathFinder, decisionLogic);
+
 
     }
 
