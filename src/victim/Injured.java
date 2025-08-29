@@ -16,6 +16,7 @@ public class Injured {
     private final Timer rescueTimer;           // تایمر باقی‌مانده برای نجات
     private boolean isRescued;                 // آیا نجات داده شده؟
     private boolean isDead;                    // آیا مرده؟
+    private boolean beingRescued;              // آیا در حال نجات است؟
 
     // سازنده
     public Injured(int id, Position position, InjurySeverity severity, int timeLimit) {
@@ -25,6 +26,7 @@ public class Injured {
         this.rescueTimer = new Timer(timeLimit);
         this.isRescued = false;
         this.isDead = false;
+        this.beingRescued = false;
     }
 
     // شناسه مجروح
@@ -60,17 +62,23 @@ public class Injured {
     // مارک کردن به‌عنوان نجات‌یافته
     public void markAsRescued() {
         isRescued = true;
+        beingRescued = false;
         rescueTimer.stop();
     }
 
     // مارک کردن به‌عنوان مرده
     public void markAsDead() {
         isDead = true;
+        beingRescued = false;
         rescueTimer.stop();
     }
 
     // بررسی اینکه نجات ممکنه یا نه
+    public boolean isBeingRescued() { return beingRescued; }
+
+    public void setBeingRescued(boolean beingRescued) { this.beingRescued = beingRescued; }
+
     public boolean canBeRescued() {
-        return !isRescued && !isDead && !rescueTimer.isFinished();
+        return !isRescued && !isDead && !beingRescued && !rescueTimer.isFinished();
     }
 }
