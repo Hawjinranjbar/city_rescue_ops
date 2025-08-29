@@ -116,7 +116,8 @@ public class MapLoader {
                 if (tileImage == null) continue;
 
                 // --- تعیین نوع سلول ---
-                Cell.Type type = Cell.Type.ROAD; // fallback
+                Cell.Type type = Cell.Type.OBSTACLE; // حالت پیش‌فرض: غیرقابل عبور
+                boolean walkable = false;
 
                 // اگر property داشت، از آن بخوان
                 if (owner != null) {
@@ -134,17 +135,28 @@ public class MapLoader {
                                 if (name.equalsIgnoreCase("type")) {
                                     if ("road".equalsIgnoreCase(value)) type = Cell.Type.ROAD;
                                     else if ("hospital".equalsIgnoreCase(value)) type = Cell.Type.HOSPITAL;
-                                    else if ("rubble".equalsIgnoreCase(value)) type = Cell.Type.RUBBLE;
+                                    else if ("building".equalsIgnoreCase(value)) type = Cell.Type.BUILDING;
+                                    else if ("car".equalsIgnoreCase(value) || "obstacle".equalsIgnoreCase(value))
+                                        type = Cell.Type.OBSTACLE;
+                                    else if ("rubble".equalsIgnoreCase(value)) type = Cell.Type.OBSTACLE;
                                     else type = Cell.Type.EMPTY;
+                                } else if (name.equalsIgnoreCase("walkable")) {
+                                    walkable = Boolean.parseBoolean(value);
                                 }
                             }
                         }
                     }
                 }
 
-                // اگر property نداشت، می‌تونی مثل قبل با gid چک کنی
+                // اگر تایل walkable بود ولی نوع مشخص نشد، جاده در نظر بگیر
+                if (walkable && type == Cell.Type.OBSTACLE) {
+                    type = Cell.Type.ROAD;
+                }
+
+                // اگر property نداشت، می‌تونی با GID نوع را تخمین بزنی
                 if (gid == 25) type = Cell.Type.HOSPITAL;
-                if (gid >= 50 && gid <= 70) type = Cell.Type.RUBBLE;
+                else if (gid >= 50 && gid <= 70) type = Cell.Type.BUILDING;
+                else if (gid >= 71 && gid <= 80) type = Cell.Type.OBSTACLE;
 
                 Cell cell = new Cell(new Position(x, y), type, tileImage, gid);
                 cityMap.setCell(x, y, cell);

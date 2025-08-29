@@ -6,6 +6,7 @@ import map.CityMap;
 import playercontrol.DecisionInterface;
 import util.MoveGuard;
 import util.Position;
+import util.CollisionMap;
 
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
@@ -26,23 +27,26 @@ public class KeyHandler extends KeyAdapter {
     private Rescuer currentRescuer;
     private final DecisionInterface decisionInterface;
     private final CityMap map;
+    private final CollisionMap collisionMap;
     private final GamePanel panel; // برای repaint بعد از حرکت
 
     public KeyHandler(List<Rescuer> rescuers,
                       Rescuer initialRescuer,
                       DecisionInterface decisionInterface,
                       CityMap map,
+                      CollisionMap collisionMap,
                       GamePanel panel) {
         this.allRescuers = rescuers;
         this.currentRescuer = initialRescuer;
         this.decisionInterface = decisionInterface;
         this.map = map;
+        this.collisionMap = collisionMap;
         this.panel = panel;
     }
 
     @Override
     public void keyPressed(KeyEvent e) {
-        if (currentRescuer == null || map == null) return;
+        if (currentRescuer == null || map == null || collisionMap == null) return;
         Position p = currentRescuer.getPosition();
         if (p == null) return;
 
@@ -63,22 +67,22 @@ public class KeyHandler extends KeyAdapter {
 
             case KeyEvent.VK_W:
             case KeyEvent.VK_UP:
-                moved = MoveGuard.tryMoveTo(map, currentRescuer, x, y - 1, 3);
+                moved = MoveGuard.tryMoveTo(map, collisionMap, currentRescuer, x, y - 1, 3);
                 break;
 
             case KeyEvent.VK_S:
             case KeyEvent.VK_DOWN:
-                moved = MoveGuard.tryMoveTo(map, currentRescuer, x, y + 1, 0);
+                moved = MoveGuard.tryMoveTo(map, collisionMap, currentRescuer, x, y + 1, 0);
                 break;
 
             case KeyEvent.VK_A:
             case KeyEvent.VK_LEFT:
-                moved = MoveGuard.tryMoveTo(map, currentRescuer, x - 1, y, 1);
+                moved = MoveGuard.tryMoveTo(map, collisionMap, currentRescuer, x - 1, y, 1);
                 break;
 
             case KeyEvent.VK_D:
             case KeyEvent.VK_RIGHT:
-                moved = MoveGuard.tryMoveTo(map, currentRescuer, x + 1, y, 2);
+                moved = MoveGuard.tryMoveTo(map, collisionMap, currentRescuer, x + 1, y, 2);
                 break;
 
             default:

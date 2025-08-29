@@ -10,6 +10,8 @@ import victim.InjurySeverity;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.awt.image.BufferedImage;
 import java.util.List;
 
@@ -33,22 +35,32 @@ public class GamePanel extends JPanel {
     private double rescuerScale = 2.0;     // بزرگ‌نمایی فقط برای Rescuer
     private boolean debugWalkable = false; // اورلی دیباگ: سبز/قرمز (walkable/occupied)
 
+    // ---- Viewport ----
+    private int viewX = 0;                 // مختصات تایل بالا-چپ ویوپورت
+    private int viewY = 0;
+    private int viewWidth;                 // عرض ویوپورت بر حسب تعداد تایل
+    private int viewHeight;                // ارتفاع ویوپورت بر حسب تعداد تایل
+
     // ---- سازنده ----
     public GamePanel(CityMap cityMap, List<Rescuer> rescuers, List<Injured> victims) {
         this.cityMap = cityMap;
         this.rescuers = rescuers;
         this.victims = victims;
 
-        if (cityMap != null) {
-            setPreferredSize(new Dimension(cityMap.getWidth() * tileSize,
-                    cityMap.getHeight() * tileSize));
-        } else {
-            setPreferredSize(new Dimension(800, 600));
-        }
+        // اندازه اولیهٔ ویوپورت بر اساس اندازهٔ پنل در زمان اجرا تنظیم می‌شود
+        this.viewWidth = 1;
+        this.viewHeight = 1;
 
         setFocusable(true);
         requestFocusInWindow();
         setDoubleBuffered(true);
+
+        addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent e) {
+                updateViewportSize();
+            }
+        });
     }
 
     // ---------------------- رندر اصلی ----------------------
@@ -60,35 +72,73 @@ public class GamePanel extends JPanel {
         g.setColor(new Color(200, 200, 200));
         g.fillRect(0, 0, getWidth(), getHeight());
 
-        if (cityMap != null) {
-            drawMap(g);
-        }
+        if (cityMap == null) return;
+
+        updateViewportSize();
+        updateViewport();
+
+        Graphics2D gWorld = (Graphics2D) g.create();
+        gWorld.translate(-viewX * tileSize, -viewY * tileSize);
+
+        drawMap(gWorld);
 
         if (victims != null) {
-            drawVictims(g);
+            drawVictims(gWorld);
         }
 
         if (rescuers != null) {
-            Graphics2D g2 = (Graphics2D) g.create();
+            Graphics2D g2 = (Graphics2D) gWorld.create();
             g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
             drawRescuers(g2);
             g2.dispose();
         }
 
-        if (debugWalkable && cityMap != null) {
-            drawWalkableOverlay(g);
+        if (debugWalkable) {
+            drawWalkableOverlay(gWorld);
         }
 
-        if (drawGrid && cityMap != null) {
-            drawGridLines(g);
+        if (drawGrid) {
+            drawGridLines(gWorld);
         }
+
+        gWorld.dispose();
     }
 
     // ---------------------- متدهای رندر ----------------------
+    private void updateViewportSize() {
+        if (cityMap == null) return;
+        int tilesW = Math.max(1, getWidth() / tileSize);
+        int tilesH = Math.max(1, getHeight() / tileSize);
+        viewWidth = Math.min(cityMap.getWidth(), tilesW);
+        viewHeight = Math.min(cityMap.getHeight(), tilesH);
+    }
+
+    private void updateViewport() {
+        if (cityMap == null || rescuers == null || rescuers.isEmpty()) return;
+        Rescuer r = rescuers.get(0);
+        if (r == null || r.getPosition() == null) return;
+
+        int centerX = r.getPosition().getX();
+        int centerY = r.getPosition().getY();
+        viewX = centerX - viewWidth / 2;
+        viewY = centerY - viewHeight / 2;
+
+        if (viewX < 0) viewX = 0;
+        if (viewY < 0) viewY = 0;
+        int maxX = cityMap.getWidth() - viewWidth;
+        int maxY = cityMap.getHeight() - viewHeight;
+        if (viewX > maxX) viewX = maxX;
+        if (viewY > maxY) viewY = maxY;
+    }
+
     private void drawMap(Graphics g) {
-        for (int y = 0; y < cityMap.getHeight(); y++) {
-            for (int x = 0; x < cityMap.getWidth(); x++) {
+        int startY = viewY;
+        int endY = Math.min(cityMap.getHeight(), viewY + viewHeight);
+        int startX = viewX;
+        int endX = Math.min(cityMap.getWidth(), viewX + viewWidth);
+        for (int y = startY; y < endY; y++) {
+            for (int x = startX; x < endX; x++) {
                 Cell cell = cityMap.getCell(x, y);
                 if (cell == null) continue;
 
@@ -109,6 +159,8 @@ public class GamePanel extends JPanel {
 
             Position p = inj.getPosition();
             if (p == null) continue;
+            if (p.getX() < viewX || p.getX() >= viewX + viewWidth ||
+                    p.getY() < viewY || p.getY() >= viewY + viewHeight) continue;
 
             Color col;
             InjurySeverity sev = inj.getSeverity();
@@ -129,6 +181,9 @@ public class GamePanel extends JPanel {
             if (r == null || r.getPosition() == null) continue;
 
             Position pos = r.getPosition();
+            if (pos.getX() < viewX || pos.getX() >= viewX + viewWidth ||
+                    pos.getY() < viewY || pos.getY() >= viewY + viewHeight) continue;
+
             int baseX = pos.getX() * tileSize;
             int baseY = pos.getY() * tileSize;
             int size = (int) Math.round(tileSize * rescuerScale);
@@ -150,8 +205,12 @@ public class GamePanel extends JPanel {
     private void drawWalkableOverlay(Graphics g) {
         Graphics2D gg = (Graphics2D) g.create();
         gg.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.25f));
-        for (int y = 0; y < cityMap.getHeight(); y++) {
-            for (int x = 0; x < cityMap.getWidth(); x++) {
+        int startY = viewY;
+        int endY = Math.min(cityMap.getHeight(), viewY + viewHeight);
+        int startX = viewX;
+        int endX = Math.min(cityMap.getWidth(), viewX + viewWidth);
+        for (int y = startY; y < endY; y++) {
+            for (int x = startX; x < endX; x++) {
                 Cell c = cityMap.getCell(x, y);
                 if (c == null) continue;
                 int px = x * tileSize;
@@ -166,11 +225,13 @@ public class GamePanel extends JPanel {
 
     private void drawGridLines(Graphics g) {
         g.setColor(new Color(0, 0, 0, 40));
-        int w = (cityMap != null ? cityMap.getWidth() * tileSize : getWidth());
-        int h = (cityMap != null ? cityMap.getHeight() * tileSize : getHeight());
+        int startX = viewX * tileSize;
+        int endX = (viewX + viewWidth) * tileSize;
+        int startY = viewY * tileSize;
+        int endY = (viewY + viewHeight) * tileSize;
 
-        for (int x = 0; x <= w; x += tileSize) g.drawLine(x, 0, x, h);
-        for (int y = 0; y <= h; y += tileSize) g.drawLine(0, y, w, y);
+        for (int x = startX; x <= endX; x += tileSize) g.drawLine(x, startY, x, endY);
+        for (int y = startY; y <= endY; y += tileSize) g.drawLine(startX, y, endX, y);
     }
 
     // ---------------------- Setter / Update ----------------------
@@ -179,9 +240,12 @@ public class GamePanel extends JPanel {
         this.rescuers = rescuers;
         this.victims = victims;
         if (cityMap != null) {
-            setPreferredSize(new Dimension(cityMap.getWidth() * tileSize,
-                    cityMap.getHeight() * tileSize));
+            this.viewWidth = Math.max(1, cityMap.getWidth() / 2);
+            this.viewHeight = Math.max(1, cityMap.getHeight() / 2);
+            setPreferredSize(new Dimension(viewWidth * tileSize,
+                    viewHeight * tileSize));
         }
+        updateViewport();
         revalidate();
         repaint();
     }
@@ -190,8 +254,8 @@ public class GamePanel extends JPanel {
         if (tileSize <= 0) return;
         this.tileSize = tileSize;
         if (cityMap != null) {
-            setPreferredSize(new Dimension(cityMap.getWidth() * tileSize,
-                    cityMap.getHeight() * tileSize));
+            setPreferredSize(new Dimension(viewWidth * tileSize,
+                    viewHeight * tileSize));
         }
         revalidate();
         repaint();
@@ -217,15 +281,19 @@ public class GamePanel extends JPanel {
     public void setMap(CityMap cityMap) {
         this.cityMap = cityMap;
         if (cityMap != null) {
-            setPreferredSize(new Dimension(cityMap.getWidth() * tileSize,
-                    cityMap.getHeight() * tileSize));
+            this.viewWidth = Math.max(1, cityMap.getWidth() / 2);
+            this.viewHeight = Math.max(1, cityMap.getHeight() / 2);
+            setPreferredSize(new Dimension(viewWidth * tileSize,
+                    viewHeight * tileSize));
         }
+        updateViewport();
         revalidate();
         repaint();
     }
 
     public void setRescuers(List<Rescuer> rescuers) {
         this.rescuers = rescuers;
+        updateViewport();
         repaint();
     }
 

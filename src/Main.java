@@ -5,6 +5,7 @@ import map.MapLoader;
 import ui.GamePanel;
 import util.MoveGuard;
 import util.Position;
+import util.CollisionMap;
 
 import javax.swing.*;
 import java.awt.*;
@@ -18,26 +19,23 @@ public class Main {
     private static CityMap map;
     private static Rescuer r;
     private static GamePanel gamePanel;
+    private static CollisionMap collisionMap;
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(new Runnable() {
             @Override public void run() {
                 try {
-                    // 1) لود نقشه از TMX
+                    // 1) لود نقشه و CollisionMap از TMX
                     map = MapLoader.loadTMX("assets/maps/rescue_city.tmx");
+                    collisionMap = CollisionMap.fromTMX("assets/maps/rescue_city.tmx");
+                    map.setCollisionMap(collisionMap);
 
-                    // 2) ساخت نجات‌دهنده
+                    // 2) ساخت نجات‌دهنده و قرار دادن آن در پایین‌سمت راست جاده
                     List<Rescuer> rescuers = new ArrayList<>();
-                    r = new Rescuer(1, new Position(5, 5));
-                    // اگر خانه‌ی شروع غیرقابل عبور بود، اولین خانه‌ی مجاز را پیدا کن
-                    if (!isWalkable(r.getPosition())) {
-                        Position start = findFirstWalkable();
-                        r.setPosition(start);
-                    }
-                    // اشغال‌کردن خانه‌ی شروع
-                    Cell startCell = map.getCell(r.getPosition().getX(), r.getPosition().getY());
+                    Position start = findBottomRightRoad();
+                    r = new Rescuer(1, start);
+                    Cell startCell = map.getCell(start.getX(), start.getY());
                     if (startCell != null) startCell.setOccupied(true);
-
                     rescuers.add(r);
 
                     // 3) ساخت پنل بازی
@@ -57,22 +55,22 @@ public class Main {
                             switch (code) {
                                 case KeyEvent.VK_UP:
                                 case KeyEvent.VK_W:
-                                    moved = MoveGuard.tryMoveTo(map, r, x, y - 1, 3);
+                                    moved = MoveGuard.tryMoveTo(map, collisionMap, r, x, y - 1, 3);
                                     break;
 
                                 case KeyEvent.VK_DOWN:
                                 case KeyEvent.VK_S:
-                                    moved = MoveGuard.tryMoveTo(map, r, x, y + 1, 0);
+                                    moved = MoveGuard.tryMoveTo(map, collisionMap, r, x, y + 1, 0);
                                     break;
 
                                 case KeyEvent.VK_LEFT:
                                 case KeyEvent.VK_A:
-                                    moved = MoveGuard.tryMoveTo(map, r, x - 1, y, 1);
+                                    moved = MoveGuard.tryMoveTo(map, collisionMap, r, x - 1, y, 1);
                                     break;
 
                                 case KeyEvent.VK_RIGHT:
                                 case KeyEvent.VK_D:
-                                    moved = MoveGuard.tryMoveTo(map, r, x + 1, y, 2);
+                                    moved = MoveGuard.tryMoveTo(map, collisionMap, r, x + 1, y, 2);
                                     break;
 
                                 default:
@@ -112,18 +110,17 @@ public class Main {
         });
     }
 
-    // --- ابزار عبورپذیری برای خانه‌ی شروع ---
-    private static boolean isWalkable(Position p) {
-        if (p == null || !map.isValid(p.getX(), p.getY())) return false;
-        Cell c = map.getCell(p.getX(), p.getY());
-        return c != null && c.isWalkable() && !c.isOccupied();
-    }
-
-    private static Position findFirstWalkable() {
-        for (int y = 0; y < map.getHeight(); y++) {
-            for (int x = 0; x < map.getWidth(); x++) {
+    // --- پیدا کردن نزدیک‌ترین جاده به گوشه‌ی پایین‌راست ---
+    private static Position findBottomRightRoad() {
+        for (int y = map.getHeight() - 1; y >= 0; y--) {
+            for (int x = map.getWidth() - 1; x >= 0; x--) {
                 Cell c = map.getCell(x, y);
-                if (c != null && c.isWalkable() && !c.isOccupied()) {
+                if (c != null && c.getType() == Cell.Type.ROAD && !c.isOccupied()) {
+                    return new Position(x, y);
+                }
+                if (c == null && collisionMap != null && collisionMap.isWalkable(x, y)) {
+                    // در صورتی که CollisionMap آن را قابل عبور بداند ولی سلول وجود ندارد
+                    map.setCell(x, y, new Cell(new Position(x, y), Cell.Type.ROAD));
                     return new Position(x, y);
                 }
             }

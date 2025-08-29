@@ -26,12 +26,15 @@ public class AStarPathFinder implements IPathFinder {
         Map<Position, Integer> fScore = new HashMap<>();
 
         PriorityQueue<Position> openSet = new PriorityQueue<>(Comparator.comparingInt(fScore::get));
+        Set<Position> openSetLookup = new HashSet<>();
         gScore.put(start, 0);
         fScore.put(start, heuristic(start, goal));
         openSet.add(start);
+        openSetLookup.add(start);
 
         while (!openSet.isEmpty()) {
             Position current = openSet.poll();
+            openSetLookup.remove(current);
             if (current.equals(goal)) {
                 return reconstructPath(cameFrom, current);
             }
@@ -42,8 +45,9 @@ public class AStarPathFinder implements IPathFinder {
                     cameFrom.put(neighbor, current);
                     gScore.put(neighbor, tentativeG);
                     fScore.put(neighbor, tentativeG + heuristic(neighbor, goal));
-                    if (!openSet.contains(neighbor)) {
+                    if (!openSetLookup.contains(neighbor)) {
                         openSet.add(neighbor);
+                        openSetLookup.add(neighbor);
                     }
                 }
             }
