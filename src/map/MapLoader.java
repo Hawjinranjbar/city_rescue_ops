@@ -116,7 +116,11 @@ public class MapLoader {
                 if (tileImage == null) continue;
 
                 // --- تعیین نوع سلول ---
+
+                Cell.Type type = Cell.Type.OBSTACLE; // حالت پیش‌فرض: غیرقابل عبور
+
                 Cell.Type type = Cell.Type.ROAD; // حالت پیش‌فرض
+
 
                 // اگر property داشت، از آن بخوان
                 if (owner != null) {
