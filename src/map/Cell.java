@@ -14,7 +14,8 @@ public class Cell {
 
     public enum Type {
         ROAD,       // قابل عبور
-        RUBBLE,     // آوار / غیرقابل عبور
+        OBSTACLE,   // مانع مانند خودرو یا آوار
+        BUILDING,   // ساختمان‌ها / غیرقابل عبور
         HOSPITAL,   // نقطه تحویل مجروح
         EMPTY       // سلول خالی یا تعریف‌نشده
     }
