@@ -10,6 +10,8 @@ import victim.InjurySeverity;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.awt.image.BufferedImage;
 import java.util.List;
 
@@ -45,21 +47,20 @@ public class GamePanel extends JPanel {
         this.rescuers = rescuers;
         this.victims = victims;
 
-        if (cityMap != null) {
-            this.viewWidth = Math.max(1, cityMap.getWidth() / 2);
-            this.viewHeight = Math.max(1, cityMap.getHeight() / 2);
-            setPreferredSize(new Dimension(viewWidth * tileSize,
-                    viewHeight * tileSize));
-        } else {
-            this.viewWidth = 25; // مقادیر پیش‌فرض اگر نقشه‌ای موجود نباشد
-            this.viewHeight = 19;
-            setPreferredSize(new Dimension(viewWidth * tileSize,
-                    viewHeight * tileSize));
-        }
+        // اندازه اولیهٔ ویوپورت بر اساس اندازهٔ پنل در زمان اجرا تنظیم می‌شود
+        this.viewWidth = 1;
+        this.viewHeight = 1;
 
         setFocusable(true);
         requestFocusInWindow();
         setDoubleBuffered(true);
+
+        addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent e) {
+                updateViewportSize();
+            }
+        });
     }
 
     // ---------------------- رندر اصلی ----------------------
@@ -73,6 +74,7 @@ public class GamePanel extends JPanel {
 
         if (cityMap == null) return;
 
+        updateViewportSize();
         updateViewport();
 
         Graphics2D gWorld = (Graphics2D) g.create();
@@ -104,6 +106,14 @@ public class GamePanel extends JPanel {
     }
 
     // ---------------------- متدهای رندر ----------------------
+    private void updateViewportSize() {
+        if (cityMap == null) return;
+        int tilesW = Math.max(1, getWidth() / tileSize);
+        int tilesH = Math.max(1, getHeight() / tileSize);
+        viewWidth = Math.min(cityMap.getWidth(), tilesW);
+        viewHeight = Math.min(cityMap.getHeight(), tilesH);
+    }
+
     private void updateViewport() {
         if (cityMap == null || rescuers == null || rescuers.isEmpty()) return;
         Rescuer r = rescuers.get(0);
