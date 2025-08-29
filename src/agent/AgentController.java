@@ -40,6 +40,8 @@ public class AgentController {
                 } else {
                     target.setBeingRescued(false);
 
+                } else {
+                    target.setBeingRescued(false);
 
                 }
             }
@@ -53,6 +55,10 @@ public class AgentController {
                 rescuer.dropVictim();
 
                 if (carried != null) carried.setBeingRescued(false);
+
+
+                if (carried != null) carried.setBeingRescued(false);
+
 
 
             }
