@@ -117,10 +117,10 @@ public class MapLoader {
 
                 // --- تعیین نوع سلول ---
 
+
                 Cell.Type type = Cell.Type.OBSTACLE; // حالت پیش‌فرض: غیرقابل عبور
 
                 Cell.Type type1 = Cell.Type.ROAD; // حالت پیش‌فرض
-
 
 
                 // اگر property داشت، از آن بخوان

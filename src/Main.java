@@ -5,6 +5,7 @@ import map.MapLoader;
 import ui.GamePanel;
 import util.MoveGuard;
 import util.Position;
+import util.CollisionMap;
 
 import javax.swing.*;
 import java.awt.*;
@@ -18,13 +19,16 @@ public class Main {
     private static CityMap map;
     private static Rescuer r;
     private static GamePanel gamePanel;
+    private static CollisionMap collisionMap;
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(new Runnable() {
             @Override public void run() {
                 try {
-                    // 1) لود نقشه از TMX
+                    // 1) لود نقشه و CollisionMap از TMX
                     map = MapLoader.loadTMX("assets/maps/rescue_city.tmx");
+                    collisionMap = CollisionMap.fromTMX("assets/maps/rescue_city.tmx");
+                    map.setCollisionMap(collisionMap);
 
                     // 2) ساخت نجات‌دهنده و قرار دادن آن در پایین‌سمت راست جاده
                     List<Rescuer> rescuers = new ArrayList<>();
@@ -51,22 +55,22 @@ public class Main {
                             switch (code) {
                                 case KeyEvent.VK_UP:
                                 case KeyEvent.VK_W:
-                                    moved = MoveGuard.tryMoveTo(map, r, x, y - 1, 3);
+                                    moved = MoveGuard.tryMoveTo(map, collisionMap, r, x, y - 1, 3);
                                     break;
 
                                 case KeyEvent.VK_DOWN:
                                 case KeyEvent.VK_S:
-                                    moved = MoveGuard.tryMoveTo(map, r, x, y + 1, 0);
+                                    moved = MoveGuard.tryMoveTo(map, collisionMap, r, x, y + 1, 0);
                                     break;
 
                                 case KeyEvent.VK_LEFT:
                                 case KeyEvent.VK_A:
-                                    moved = MoveGuard.tryMoveTo(map, r, x - 1, y, 1);
+                                    moved = MoveGuard.tryMoveTo(map, collisionMap, r, x - 1, y, 1);
                                     break;
 
                                 case KeyEvent.VK_RIGHT:
                                 case KeyEvent.VK_D:
-                                    moved = MoveGuard.tryMoveTo(map, r, x + 1, y, 2);
+                                    moved = MoveGuard.tryMoveTo(map, collisionMap, r, x + 1, y, 2);
                                     break;
 
                                 default:

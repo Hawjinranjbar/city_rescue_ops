@@ -6,6 +6,7 @@ import strategy.IPathFinder;
 import strategy.IAgentDecision;
 import util.MoveGuard;
 import util.Position;
+import util.CollisionMap;
 import victim.Injured;
 
 import java.util.List;
@@ -25,8 +26,16 @@ public class AgentController {
     private final IAgentDecision decisionLogic;
     private final CityMap map;
 
+    private final CollisionMap collisionMap;
+
+    public AgentController(CityMap map, CollisionMap collisionMap, IPathFinder pathFinder, IAgentDecision decisionLogic) {
+        this.map = map;
+        this.collisionMap = collisionMap;
+
+
     public AgentController(CityMap map, IPathFinder pathFinder, IAgentDecision decisionLogic) {
         this.map = map;
+
         this.pathFinder = pathFinder;
         this.decisionLogic = decisionLogic;
     }
@@ -41,6 +50,17 @@ public class AgentController {
 
         // --- حالت 1: هنوز در حال حمل نیست ---
         if (!rescuer.isBusy()) {
+
+            Injured target = decisionLogic.selectVictim(rescuer, candidates);
+            if (target != null) {
+                target.setBeingRescued(true);
+                List<Position> pathToVictim = pathFinder.findPath(rescuer.getPosition(), target.getPosition());
+                if (moveAlongPath(rescuer, pathToVictim)) {
+                    rescuer.pickUp(target);
+                } else {
+                    target.setBeingRescued(false);
+                }
+
             Injured target = (decisionLogic != null)
                     ? decisionLogic.selectVictim(rescuer, candidates)
                     : null;
@@ -59,9 +79,31 @@ public class AgentController {
             } else {
                 // مسیر مسدود شد/نرسید
                 target.setBeingRescued(false);
+
             }
             return; // همین تیک کافی است
         }
+
+        if (rescuer.isCarryingVictim()) {
+            Injured carried = rescuer.getCarryingVictim();
+            Hospital nearestHospital = findNearestHospital(rescuer.getPosition(), hospitals);
+            List<Position> pathToHospital = pathFinder.findPath(rescuer.getPosition(), nearestHospital.getPosition());
+            if (moveAlongPath(rescuer, pathToHospital)) {
+                rescuer.dropVictim();
+                if (carried != null) carried.setBeingRescued(false);
+            }
+        }
+    }
+
+    // حرکت نجات‌دهنده در طول مسیر مشخص شده
+    private boolean moveAlongPath(Rescuer rescuer, List<Position> path) {
+        if (rescuer == null || path == null || path.isEmpty()) return false;
+        Position current = rescuer.getPosition();
+        for (Position step : path) {
+            if (step.equals(current)) continue;
+            int dir = determineDirection(current, step);
+            if (!MoveGuard.tryMoveTo(map, collisionMap, rescuer, step.getX(), step.getY(), dir)) {
+                return false;
 
         // --- حالت 2: در حال حمل است → به بیمارستان ---
         Injured carried = rescuer.getCarryingVictim();
@@ -95,11 +137,23 @@ public class AgentController {
             boolean ok = MoveGuard.tryMoveTo(map, rescuer, step.getX(), step.getY(), dir);
             if (!ok) {
                 return false; // به مانع خورد یا occupied بود
+
             }
             current = step;
         }
         return true;
     }
+
+
+    // تعیین جهت بر اساس دلتا بین دو موقعیت (0=پایین،1=چپ،2=راست،3=بالا)
+    private int determineDirection(Position from, Position to) {
+        int dx = to.getX() - from.getX();
+        int dy = to.getY() - from.getY();
+        if (dx == 1) return 2;      // راست
+        if (dx == -1) return 1;     // چپ
+        if (dy == 1) return 0;      // پایین
+        if (dy == -1) return 3;     // بالا
+        return 0;                   // پیش‌فرض
 
     /** تعیین جهت بر اساس دلتا بین دو خانه (0=پایین،1=چپ،2=راست،3=بالا). */
     private int determineDirection(Position from, Position to) {
@@ -110,6 +164,7 @@ public class AgentController {
         if (dy == 1 && dx == 0) return 0; // پایین
         if (dy == -1 && dx == 0) return 3; // بالا
         return 0; // پیش‌فرض
+
     }
 
     // -------------------- کمکی‌های انتخاب بیمارستان --------------------
