@@ -13,7 +13,7 @@ import java.util.List;
 
 /**
  * --------------------
- * لایه: Domain Layer
+ * Domain Layer
  * --------------------
  * کنترل رفتار نجات‌دهنده:
  *  - انتخاب مجروح هدف (IAgentDecision)
@@ -27,34 +27,16 @@ public class AgentController {
     private final CityMap map;
     private final CollisionMap collisionMap;
 
-
-    public AgentController(CityMap map, CollisionMap collisionMap, IPathFinder pathFinder, IAgentDecision decisionLogic) {
-
     public AgentController(CityMap map,
                            CollisionMap collisionMap,
                            IPathFinder pathFinder,
                            IAgentDecision decisionLogic) {
-
         this.map = map;
         this.collisionMap = collisionMap;
         this.pathFinder = pathFinder;
         this.decisionLogic = decisionLogic;
     }
 
-
-    // اجرای عملیات برای یک نجات‌دهنده (پیدا کردن قربانی، مسیر، و حرکت)
-    public void performAction(Rescuer rescuer, List<Injured> candidates, List<Hospital> hospitals) {
-        if (!rescuer.isBusy()) {
-            Injured target = decisionLogic.selectVictim(rescuer, candidates);
-            if (target != null) {
-                target.setBeingRescued(true);
-                List<Position> pathToVictim = pathFinder.findPath(rescuer.getPosition(), target.getPosition());
-                if (moveAlongPath(rescuer, pathToVictim)) {
-                    rescuer.pickUp(target);
-                } else {
-                    target.setBeingRescued(false);
-                }
-=======
     /**
      * اجرای یک «تیک» از رفتار ریسکیور.
      * اگر حمل نمی‌کند → قربانیِ هدف را انتخاب و به سمتش حرکت می‌کند.
@@ -87,35 +69,11 @@ public class AgentController {
                 rescuer.pickUp(target);
             } else {
                 target.setBeingRescued(false); // مسیر غیرقابل‌عبور/مسدود
-
             }
             return; // همین تیک کافی است
         }
 
-
-        if (rescuer.isCarryingVictim()) {
-            Injured carried = rescuer.getCarryingVictim();
-            Hospital nearestHospital = findNearestHospital(rescuer.getPosition(), hospitals);
-            List<Position> pathToHospital = pathFinder.findPath(rescuer.getPosition(), nearestHospital.getPosition());
-            if (moveAlongPath(rescuer, pathToHospital)) {
-                rescuer.dropVictim();
-                if (carried != null) carried.setBeingRescued(false);
-            }
-        }
-    }
-
-    // حرکت نجات‌دهنده در طول مسیر مشخص شده
-    private boolean moveAlongPath(Rescuer rescuer, List<Position> path) {
-        if (rescuer == null || path == null || path.isEmpty()) return false;
-        Position current = rescuer.getPosition();
-        for (Position step : path) {
-            if (step.equals(current)) continue;
-            int dir = determineDirection(current, step);
-            if (!MoveGuard.tryMoveTo(map, collisionMap, rescuer, step.getX(), step.getY(), dir)) {
-                return false;
-            }
-
-        // حالت 2: در حال حمل است → به بیمارستان
+        // حالت 2: در حال حمل است → بیمارستان
         Injured carried = rescuer.getCarryingVictim();
         Hospital nearest = findNearestHospital(rescuer.getPosition(), hospitals);
         if (nearest == null || nearest.getPosition() == null) return;
@@ -131,9 +89,7 @@ public class AgentController {
         }
     }
 
-    // -------------------- کمکی‌های حرکت --------------------
-
-    /** حرکت طبق مسیر؛ اگر به آخر مسیر برسد true. */
+    /** حرکت طبق مسیر؛ اگر به انتهای مسیر برسد true. */
     private boolean moveAlongPath(Rescuer rescuer, List<Position> path) {
         if (rescuer == null || rescuer.getPosition() == null || path == null || path.isEmpty()) return false;
 
@@ -145,7 +101,7 @@ public class AgentController {
 
             int dir = determineDirection(current, step);
 
-            // توجه: اگر امضای متد MoveGuard شما فرق دارد، فقط همین خط را مطابق پروژه‌تان تغییر دهید.
+            // اگر امضای شما فرق دارد، فقط همین خط را تنظیم کنید.
             boolean ok = MoveGuard.tryMoveTo(
                     map,
                     collisionMap,
@@ -159,21 +115,10 @@ public class AgentController {
             // اگر جابه‌جایی داخل MoveGuard انجام نمی‌شود، این خط را باز کنید:
             // rescuer.setPosition(step);
 
-
             current = step;
         }
         return true;
     }
-
-    // تعیین جهت بر اساس دلتا بین دو موقعیت (0=پایین،1=چپ،2=راست،3=بالا)
-    private int determineDirection(Position from, Position to) {
-        int dx = to.getX() - from.getX();
-        int dy = to.getY() - from.getY();
-        if (dx == 1) return 2;      // راست
-        if (dx == -1) return 1;     // چپ
-        if (dy == 1) return 0;      // پایین
-        if (dy == -1) return 3;     // بالا
-        return 0;                   // پیش‌فرض
 
     /** تعیین جهت بر اساس دلتا بین دو خانه (0=پایین،1=چپ،2=راست،3=بالا). */
     private int determineDirection(Position from, Position to) {
@@ -184,32 +129,18 @@ public class AgentController {
         if (dy == 1 && dx == 0) return 0; // پایین
         if (dy == -1 && dx == 0) return 3; // بالا
         return 0;
-
     }
-
-    // -------------------- کمکی‌های انتخاب بیمارستان --------------------
 
     private Hospital findNearestHospital(Position from, List<Hospital> hospitals) {
         if (from == null || hospitals == null || hospitals.isEmpty()) return null;
-
         Hospital nearest = null;
         int best = Integer.MAX_VALUE;
-
         for (Hospital h : hospitals) {
             if (h == null || h.getPosition() == null) continue;
-            int d = manhattan(from, h.getPosition());
-            if (d < best) {
-                best = d;
-                nearest = h;
-            }
+            int d = Math.abs(from.getX() - h.getPosition().getX())
+                    + Math.abs(from.getY() - h.getPosition().getY());
+            if (d < best) { best = d; nearest = h; }
         }
         return nearest;
-    }
-
-    /** فاصلهٔ منهتن بین دو مختصات تایل. */
-    private int manhattan(Position a, Position b) {
-        int dx = Math.abs(a.getX() - b.getX());
-        int dy = Math.abs(a.getY() - b.getY());
-        return dx + dy;
     }
 }
