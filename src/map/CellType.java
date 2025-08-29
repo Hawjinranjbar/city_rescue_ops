@@ -15,7 +15,7 @@ public enum CellType {
     HOSPITAL(true, 1.0f, true),
 
     // غیرقابل عبور
-    RUBBLE(false, Float.POSITIVE_INFINITY, false),
+    OBSTACLE(false, Float.POSITIVE_INFINITY, false),
     BUILDING(false, Float.POSITIVE_INFINITY, false),
     EMPTY(false, Float.POSITIVE_INFINITY, false);
 

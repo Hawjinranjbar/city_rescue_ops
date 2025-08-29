@@ -43,8 +43,10 @@ public class MiniMapPanel extends JPanel {
 
                 switch (cell.getType()) {
                     case ROAD -> g.setColor(Color.LIGHT_GRAY);
-                    case RUBBLE -> g.setColor(Color.DARK_GRAY);
+                    case OBSTACLE -> g.setColor(Color.DARK_GRAY);
+                    case BUILDING -> g.setColor(new Color(120, 81, 57));
                     case HOSPITAL -> g.setColor(Color.GREEN);
+                    case EMPTY -> g.setColor(Color.BLACK);
                 }
 
                 g.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
