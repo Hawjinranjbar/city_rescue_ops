@@ -38,6 +38,7 @@ public class AgentController {
                     rescuer.pickUp(target);
                 } else {
                     target.setBeingRescued(false);
+
                 }
             }
         }
@@ -48,8 +49,10 @@ public class AgentController {
             List<Position> pathToHospital = pathFinder.findPath(rescuer.getPosition(), nearestHospital.getPosition());
             if (moveAlongPath(rescuer, pathToHospital)) {
                 rescuer.dropVictim();
+
                 if (carried != null) carried.setBeingRescued(false);
             }
+
         }
     }
 
