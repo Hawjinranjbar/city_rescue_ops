@@ -30,7 +30,9 @@ public class RescueCoordinator {
                              CityMap map,
 
 
+
                              CollisionMap collisionMap,
+
 
 
                              IPathFinder pathFinder,
@@ -41,7 +43,9 @@ public class RescueCoordinator {
         this.hospitals = hospitals;
 
 
+
         this.agentController = new AgentController(map, collisionMap, pathFinder, decisionLogic);
+
 
 
     }

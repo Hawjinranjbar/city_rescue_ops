@@ -33,6 +33,7 @@ public final class MoveGuard {
         final Cell dest = map.getCell(nx, ny);
 
 
+
         if (dest == null || dest.isOccupied()) return false;
 
         if (dest == null) return false;

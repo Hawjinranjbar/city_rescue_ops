@@ -115,6 +115,22 @@ public class Main {
         for (int y = map.getHeight() - 1; y >= 0; y--) {
             for (int x = map.getWidth() - 1; x >= 0; x--) {
                 Cell c = map.getCell(x, y);
+
+                boolean walkable = collisionMap != null && collisionMap.isWalkable(x, y);
+                boolean isRoad = c != null && c.getType() == Cell.Type.ROAD;
+
+                if (walkable || isRoad) {
+                    if (c == null || c.getType() != Cell.Type.ROAD) {
+                        // اگر سلول وجود ندارد یا نوعش جاده نیست، یک سلول جاده‌ای جایگزین می‌کنیم
+                        c = new Cell(new Position(x, y), Cell.Type.ROAD,
+                                c != null ? c.getImage() : null,
+                                c != null ? c.getTileId() : -1);
+                        map.setCell(x, y, c);
+                    }
+                    if (!c.isOccupied()) {
+                        return new Position(x, y);
+                    }
+
                 if (c != null && c.getType() == Cell.Type.ROAD && !c.isOccupied()) {
 
                     return new Position(x, y);
@@ -124,6 +140,7 @@ public class Main {
                     map.setCell(x, y, new Cell(new Position(x, y), Cell.Type.ROAD));
 
                     return new Position(x, y);
+
                 }
             }
         }

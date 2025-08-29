@@ -152,6 +152,44 @@ public final class MapLoader {
                 for (TilesetInfo ts : tilesets) {
                     if (ts.owns(gid)) { owner = ts; break; }
                 }
+
+                if (tileImage == null) continue;
+
+                // --- تعیین نوع سلول ---
+                Cell.Type type = Cell.Type.OBSTACLE; // حالت پیش‌فرض: غیرقابل عبور
+                boolean walkable = false;
+
+                // اگر property داشت، از آن بخوان
+                if (owner != null) {
+                    int localId = gid - owner.firstGid;
+                    NodeList tileNodes = owner.tilesetElement.getElementsByTagName("tile");
+                    for (int ti = 0; ti < tileNodes.getLength(); ti++) {
+                        Element tileElem = (Element) tileNodes.item(ti);
+                        int id = Integer.parseInt(tileElem.getAttribute("id"));
+                        if (id == localId) {
+                            NodeList propList = tileElem.getElementsByTagName("property");
+                            for (int pi = 0; pi < propList.getLength(); pi++) {
+                                Element prop = (Element) propList.item(pi);
+                                String name = prop.getAttribute("name");
+                                String value = prop.getAttribute("value");
+                                if (name.equalsIgnoreCase("type")) {
+                                    if ("road".equalsIgnoreCase(value)) type = Cell.Type.ROAD;
+                                    else if ("hospital".equalsIgnoreCase(value)) type = Cell.Type.HOSPITAL;
+                                    else if ("building".equalsIgnoreCase(value)) type = Cell.Type.BUILDING;
+                                    else if ("car".equalsIgnoreCase(value) || "obstacle".equalsIgnoreCase(value))
+                                        type = Cell.Type.OBSTACLE;
+                                    else if ("rubble".equalsIgnoreCase(value)) type = Cell.Type.OBSTACLE;
+                                    else type = Cell.Type.EMPTY;
+                                } else if (name.equalsIgnoreCase("walkable")) {
+                                    walkable = Boolean.parseBoolean(value);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // اگر تایل walkable بود ولی نوع مشخص نشد، جاده در نظر بگیر
+
                 if (owner == null) continue;
 
                 BufferedImage tileImage = owner.getSubImage(gid);
@@ -185,14 +223,22 @@ public final class MapLoader {
                 }
 
                 // اگر walkable=true بود اما type هنوز مانع است → ROAD
+
                 if (walkable && type == Cell.Type.OBSTACLE) {
                     type = Cell.Type.ROAD;
                 }
+
+
+                // اگر property نداشت، می‌تونی با GID نوع را تخمین بزنی
+                if (gid == 25) type = Cell.Type.HOSPITAL;
+                else if (gid >= 50 && gid <= 70) type = Cell.Type.BUILDING;
+                else if (gid >= 71 && gid <= 80) type = Cell.Type.OBSTACLE;
 
                 // fallback خیلی ساده (اختیاری – بسته به GID):
                 // if (type == Cell.Type.OBSTACLE) {
                 //     if (gid == 25) type = Cell.Type.HOSPITAL;
                 // }
+
 
                 Cell cell = new Cell(new Position(x, y), type, tileImage, gid);
                 cityMap.setCell(x, y, cell);
