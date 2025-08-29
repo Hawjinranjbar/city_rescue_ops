@@ -90,6 +90,15 @@ public class Rescuer {
             }
         }
 
+        // ساخت فریم‌های جهت چپ با وارونه‌سازی افقی فریم‌های راست
+        BufferedImage[] leftRow = new BufferedImage[COLS];
+        for (int c = 0; c < COLS; c++) {
+            if (frames[2][c] != null) {
+                leftRow[c] = flipHorizontal(frames[2][c]);
+            }
+        }
+        frames[1] = leftRow;
+
         // اگر ردیف UP در شیت وجود ندارد، از ردیف DOWN کپی کن
         if (frames[3] == null || frames[3][0] == null) {
             BufferedImage[] upRow = new BufferedImage[COLS];
@@ -235,6 +244,18 @@ public class Rescuer {
         g2.drawImage(src, 0, 0, w, h, null);
         g2.dispose();
         return dst;
+    }
+
+    /** وارونه‌سازی افقی تصویر برای ساخت فریم‌های جهت چپ از راست */
+    private static BufferedImage flipHorizontal(BufferedImage src) {
+        if (src == null) return null;
+        int w = src.getWidth();
+        int h = src.getHeight();
+        BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = out.createGraphics();
+        g.drawImage(src, 0, 0, w, h, w, 0, 0, h, null);
+        g.dispose();
+        return out;
     }
 
     public void setDirection(int dir) { this.direction = clamp(dir, 0, 3); }
