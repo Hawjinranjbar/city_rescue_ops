@@ -28,14 +28,26 @@ public class RescueCoordinator {
                              VictimManager victimManager,
                              List<Hospital> hospitals,
                              CityMap map,
+
+
+
                              CollisionMap collisionMap,
+
+
+
                              IPathFinder pathFinder,
                              IAgentDecision decisionLogic) {
 
         this.agentManager = agentManager;
         this.victimManager = victimManager;
         this.hospitals = hospitals;
+
+
+
         this.agentController = new AgentController(map, collisionMap, pathFinder, decisionLogic);
+
+
+
     }
 
     // اجرای یک دور عملیات نجات برای همه نجات‌دهنده‌ها
