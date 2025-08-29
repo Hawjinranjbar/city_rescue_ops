@@ -47,7 +47,6 @@ public class GamePanel extends JPanel {
         this.rescuers = rescuers;
         this.victims = victims;
 
- codex/analyze-code-024usg
         // اندازه اولیهٔ ویوپورت بر اساس اندازهٔ پنل در زمان اجرا تنظیم می‌شود
         this.viewWidth = 1;
         this.viewHeight = 1;
@@ -62,7 +61,7 @@ public class GamePanel extends JPanel {
             this.viewHeight = 19;
             setPreferredSize(new Dimension(viewWidth * tileSize,
                     viewHeight * tileSize));}
- master
+
 
         setFocusable(true);
         requestFocusInWindow();
@@ -89,7 +88,6 @@ public class GamePanel extends JPanel {
 
         updateViewportSize();
 
- master
         updateViewport();
 
         Graphics2D gWorld = (Graphics2D) g.create();
@@ -130,7 +128,7 @@ public class GamePanel extends JPanel {
         viewHeight = Math.min(cityMap.getHeight(), tilesH);
     }
 
- master
+
     private void updateViewport() {
         if (cityMap == null || rescuers == null || rescuers.isEmpty()) return;
         Rescuer r = rescuers.get(0);

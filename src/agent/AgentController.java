@@ -40,7 +40,7 @@ public class AgentController {
                 } else {
                     target.setBeingRescued(false);
 
-master
+
                 }
             }
         }
@@ -54,7 +54,7 @@ master
 
                 if (carried != null) carried.setBeingRescued(false);
 
- master
+
             }
         }
     }
