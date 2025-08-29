@@ -36,8 +36,11 @@ public class AgentController {
                 List<Position> pathToVictim = pathFinder.findPath(rescuer.getPosition(), target.getPosition());
                 if (moveAlongPath(rescuer, pathToVictim)) {
                     rescuer.pickUp(target);
+
                 } else {
                     target.setBeingRescued(false);
+
+        
                 }
             }
         }
@@ -48,8 +51,11 @@ public class AgentController {
             List<Position> pathToHospital = pathFinder.findPath(rescuer.getPosition(), nearestHospital.getPosition());
             if (moveAlongPath(rescuer, pathToHospital)) {
                 rescuer.dropVictim();
+
                 if (carried != null) carried.setBeingRescued(false);
-            }
+
+
+    
         }
     }
 
