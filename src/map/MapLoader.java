@@ -3,24 +3,28 @@ package map;
 import util.AssetLoader;
 import util.Position;
 import org.w3c.dom.*;
-import javax.xml.parsers.DocumentBuilderFactory;
+
 import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * --------------------
- * لایه: Domain Layer
- * --------------------
- * Loader برای فایل‌های TMX (نقشه‌های Tiled).
- * - خواندن tileset
- * - خواندن لایه‌ها
- * - تعیین نوع Cell بر اساس property یا fallback ساده
+ * Loader ساده برای TMX (نقشه‌های Tiled).
+ * - فقط لایه‌ی اول را می‌خواند (CSV)
+ * - tileset داخلی (inline) با یک <image>
+ * - تعیین نوع Cell بر اساس property تایل‌ها:
+ *     property name="type"  → road/hospital/building/obstacle/empty
+ *     property name="walkable" → true/false
+ * - اگر walkable=true و type نامشخص بود، ROAD درنظر می‌گیرد.
  */
-public class MapLoader {
+public final class MapLoader {
 
+    private MapLoader() { }
+
+    /** ماسک بیت‌های flip در TMX (30 بیت پایین = GID واقعی) */
     private static final long GID_MASK = 0x0FFFFFFFL;
 
     /** اطلاعات tileset */
@@ -30,9 +34,14 @@ public class MapLoader {
         int tileHeight;
         int tileCount;
         int columns;
+        int margin = 0;
+        int spacing = 0;
         BufferedImage image;
-        int margin = 0, spacing = 0;
-        Element tilesetElement; // برای خواندن propertyهای tile
+        Element tilesetElement; // برای properties تایل‌ها
+
+        boolean owns(int gid) {
+            return gid >= firstGid && gid < firstGid + tileCount;
+        }
 
         BufferedImage getSubImage(int gid) {
             int localId = gid - firstGid;
@@ -40,14 +49,24 @@ public class MapLoader {
 
             int col = localId % columns;
             int row = localId / columns;
+
             int x = margin + col * (tileWidth + spacing);
             int y = margin + row * (tileHeight + spacing);
 
             return image.getSubimage(x, y, tileWidth, tileHeight);
         }
 
-        boolean owns(int gid) {
-            return gid >= firstGid && gid < firstGid + tileCount;
+        /** پیدا کردن عنصر <tile id="..."> برای localId */
+        Element findTileElement(int localId) {
+            NodeList tileNodes = tilesetElement.getElementsByTagName("tile");
+            for (int ti = 0; ti < tileNodes.getLength(); ti++) {
+                Element tileElem = (Element) tileNodes.item(ti);
+                String idAttr = tileElem.getAttribute("id");
+                if (idAttr == null || idAttr.isEmpty()) continue;
+                int id = Integer.parseInt(idAttr);
+                if (id == localId) return tileElem;
+            }
+            return null;
         }
     }
 
@@ -58,43 +77,67 @@ public class MapLoader {
         DocumentBuilderFactory f = DocumentBuilderFactory.newInstance();
         DocumentBuilder b = f.newDocumentBuilder();
         Document doc = b.parse(tmxFile);
-
         Element mapElem = doc.getDocumentElement();
-        int tileWidth  = Integer.parseInt(mapElem.getAttribute("tilewidth"));
-        int tileHeight = Integer.parseInt(mapElem.getAttribute("tileheight"));
 
-        // --- tileset ها ---
+        final int tileWidth  = Integer.parseInt(mapElem.getAttribute("tilewidth"));
+        final int tileHeight = Integer.parseInt(mapElem.getAttribute("tileheight"));
+
+        // ---------- خواندن tileset ها ----------
         NodeList tsNodes = mapElem.getElementsByTagName("tileset");
         List<TilesetInfo> tilesets = new ArrayList<>();
+
         for (int i = 0; i < tsNodes.getLength(); i++) {
             Element ts = (Element) tsNodes.item(i);
+
             TilesetInfo info = new TilesetInfo();
-            info.firstGid  = Integer.parseInt(ts.getAttribute("firstgid"));
-            info.tileWidth = tileWidth;
-            info.tileHeight= tileHeight;
-            info.tileCount = Integer.parseInt(ts.getAttribute("tilecount"));
-            info.columns   = Integer.parseInt(ts.getAttribute("columns"));
             info.tilesetElement = ts;
 
-            // تصویر tileset
+            // firstgid الزاماً روی عنصر <tileset> است
+            info.firstGid = Integer.parseInt(ts.getAttribute("firstgid"));
+
+            // اگر tilecount/columns داخل tileset تعریف نشده بودند، از image اندازه می‌گیریم
             Element img = (Element) ts.getElementsByTagName("image").item(0);
             String src = img.getAttribute("source");
             File imgFile = new File(baseDir, src);
             info.image = AssetLoader.requireImage(imgFile.getPath());
 
+            // اگر margin/spacing در تایل‌ست تعریف شده:
+            if (ts.hasAttribute("margin"))  info.margin  = parseIntOr(ts.getAttribute("margin"), 0);
+            if (ts.hasAttribute("spacing")) info.spacing = parseIntOr(ts.getAttribute("spacing"), 0);
+
+            // اندازه پیکسل هر تایل (اگر در TS تعریف نشده باشد، از map می‌گیریم)
+            info.tileWidth  = ts.hasAttribute("tilewidth")  ? Integer.parseInt(ts.getAttribute("tilewidth"))  : tileWidth;
+            info.tileHeight = ts.hasAttribute("tileheight") ? Integer.parseInt(ts.getAttribute("tileheight")) : tileHeight;
+
+            // محاسبه columns/tilecount اگر نبود
+            if (ts.hasAttribute("columns")) {
+                info.columns = Integer.parseInt(ts.getAttribute("columns"));
+            } else {
+                int imgW = info.image.getWidth();
+                info.columns = Math.max(1, (imgW - info.margin + info.spacing) / (info.tileWidth + info.spacing));
+            }
+            if (ts.hasAttribute("tilecount")) {
+                info.tileCount = Integer.parseInt(ts.getAttribute("tilecount"));
+            } else {
+                int imgH = info.image.getHeight();
+                int rows = Math.max(1, (imgH - info.margin + info.spacing) / (info.tileHeight + info.spacing));
+                info.tileCount = info.columns * rows;
+            }
+
             tilesets.add(info);
         }
 
-        // --- فقط لایه‌ی اول (فعلاً) ---
+        // ---------- فقط لایهٔ اول ----------
         Element layer = (Element) mapElem.getElementsByTagName("layer").item(0);
         int width  = Integer.parseInt(layer.getAttribute("width"));
         int height = Integer.parseInt(layer.getAttribute("height"));
+
         String data = layer.getElementsByTagName("data").item(0).getTextContent().trim();
         String[] tokens = data.split(",");
 
         CityMap cityMap = new CityMap(width, height, tileWidth, tileHeight);
 
-        // --- پرکردن نقشه ---
+        // ---------- پر کردن نقشه ----------
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 String s = tokens[y * width + x].trim();
@@ -102,89 +145,64 @@ public class MapLoader {
 
                 long raw = Long.parseUnsignedLong(s);
                 int gid = (int) (raw & GID_MASK);
-                if (gid == 0) continue;
+                if (gid == 0) continue; // خانه خالی
 
-                BufferedImage tileImage = null;
+                // پیدا کردن tileset مالک این GID
                 TilesetInfo owner = null;
                 for (TilesetInfo ts : tilesets) {
-                    if (ts.owns(gid)) {
-                        tileImage = ts.getSubImage(gid);
-                        owner = ts;
-                        break;
-                    }
+                    if (ts.owns(gid)) { owner = ts; break; }
                 }
-                if (tileImage == null) continue;
+                if (owner == null) continue;
 
-                // --- تعیین نوع سلول ---
+                BufferedImage tileImage = owner.getSubImage(gid);
 
-                Cell.Type type = Cell.Type.OBSTACLE; // حالت پیش‌فرض: غیرقابل عبور
+                // --- تعیین نوع سلول از روی properties ---
+                Cell.Type type = Cell.Type.OBSTACLE; // پیش‌فرض: غیرقابل عبور
                 boolean walkable = false;
 
+                int localId = gid - owner.firstGid;
+                Element tileElem = owner.findTileElement(localId);
+                if (tileElem != null) {
+                    NodeList props = tileElem.getElementsByTagName("property");
+                    for (int pi = 0; pi < props.getLength(); pi++) {
+                        Element prop = (Element) props.item(pi);
+                        String name = prop.getAttribute("name");
+                        String value = prop.getAttribute("value");
+                        if (name == null) continue;
 
-
-                Cell.Type type = Cell.Type.OBSTACLE; // حالت پیش‌فرض: غیرقابل عبور
-
-                Cell.Type type1 = Cell.Type.ROAD; // حالت پیش‌فرض
-
-
-                // اگر property داشت، از آن بخوان
-                if (owner != null) {
-                    int localId = gid - owner.firstGid;
-                    NodeList tileNodes = owner.tilesetElement.getElementsByTagName("tile");
-                    for (int ti = 0; ti < tileNodes.getLength(); ti++) {
-                        Element tileElem = (Element) tileNodes.item(ti);
-                        int id = Integer.parseInt(tileElem.getAttribute("id"));
-                        if (id == localId) {
-                            NodeList propList = tileElem.getElementsByTagName("property");
-                            for (int pi = 0; pi < propList.getLength(); pi++) {
-                                Element prop = (Element) propList.item(pi);
-                                String name = prop.getAttribute("name");
-                                String value = prop.getAttribute("value");
-                                if (name.equalsIgnoreCase("type")) {
-
-                                    if ("road".equalsIgnoreCase(value)) type = Cell.Type.ROAD;
-                                    else if ("hospital".equalsIgnoreCase(value)) type = Cell.Type.HOSPITAL;
-                                    else if ("building".equalsIgnoreCase(value)) type = Cell.Type.BUILDING;
-                                    else if ("car".equalsIgnoreCase(value) || "obstacle".equalsIgnoreCase(value))
-                                        type = Cell.Type.OBSTACLE;
-                                    else if ("rubble".equalsIgnoreCase(value)) type = Cell.Type.OBSTACLE;
-                                    else type = Cell.Type.EMPTY;
-
-                                } else if (name.equalsIgnoreCase("walkable")) {
-                                    walkable = Boolean.parseBoolean(value);
-                                }
-                            }
+                        if (name.equalsIgnoreCase("type")) {
+                            if ("road".equalsIgnoreCase(value))       type = Cell.Type.ROAD;
+                            else if ("hospital".equalsIgnoreCase(value)) type = Cell.Type.HOSPITAL;
+                            else if ("building".equalsIgnoreCase(value)) type = Cell.Type.BUILDING;
+                            else if ("obstacle".equalsIgnoreCase(value) || "car".equalsIgnoreCase(value) || "rubble".equalsIgnoreCase(value))
+                                type = Cell.Type.OBSTACLE;
+                            else if ("empty".equalsIgnoreCase(value))
+                                type = Cell.Type.EMPTY;
+                        } else if (name.equalsIgnoreCase("walkable")) {
+                            walkable = Boolean.parseBoolean(value);
                         }
                     }
                 }
 
-                // اگر تایل walkable بود ولی نوع مشخص نشد، جاده در نظر بگیر
+                // اگر walkable=true بود اما type هنوز مانع است → ROAD
                 if (walkable && type == Cell.Type.OBSTACLE) {
                     type = Cell.Type.ROAD;
                 }
 
-                // اگر property نداشت، می‌تونی با GID نوع را تخمین بزنی
+                // fallback خیلی ساده (اختیاری – بسته به GID):
+                // if (type == Cell.Type.OBSTACLE) {
+                //     if (gid == 25) type = Cell.Type.HOSPITAL;
+                // }
 
-
-                                    
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // اگر property نداشت، می‌تونی با GID نوع را تخمین بزنی
-
-
-                if (gid == 25) type = Cell.Type.HOSPITAL;
-                else if (gid >= 50 && gid <= 70) type = Cell.Type.BUILDING;
-                else if (gid >= 71 && gid <= 80) type = Cell.Type.OBSTACLE;
-
-                Cell cell = new Cell(new Position(x, y), type1, tileImage, gid);
+                Cell cell = new Cell(new Position(x, y), type, tileImage, gid);
                 cityMap.setCell(x, y, cell);
             }
         }
 
         return cityMap;
+    }
+
+    private static int parseIntOr(String s, int def) {
+        try { return Integer.parseInt(s); } catch (Exception e) { return def; }
     }
 }
