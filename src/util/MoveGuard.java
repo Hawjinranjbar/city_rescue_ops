@@ -33,8 +33,15 @@ public final class MoveGuard {
         final Cell dest = map.getCell(nx, ny);
         if (dest == null) return false;
 
+        // فقط اجازه‌ی حرکت روی سلول‌های جاده یا بیمارستان که خالی باشند
+        Cell.Type type = dest.getType();
+        if ((type != Cell.Type.ROAD && type != Cell.Type.HOSPITAL) || dest.isOccupied()) {
+            return false;
+        }
+
         // فقط اجازه‌ی حرکت روی سلول‌های قابل عبور و خالی
         if (!dest.isWalkable() || dest.isOccupied()) return false;
+
 
         // فقط اجازه‌ی حرکت روی جاده‌های خالی
         if (dest.getType() != Cell.Type.ROAD || dest.isOccupied()) return false;

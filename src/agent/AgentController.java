@@ -41,6 +41,15 @@ public class AgentController {
 
         // --- 1) اگر در حال حمل نیست: به سمت مجروح هدف برو ---
         if (!rescuer.isBusy()) {
+
+            Injured target = decisionLogic.selectVictim(rescuer, candidates);
+            if (target != null) {
+                target.setBeingRescued(true);
+                List<Position> pathToVictim = pathFinder.findPath(rescuer.getPosition(), target.getPosition());
+                if (moveAlongPath(rescuer, pathToVictim)) {
+                    rescuer.pickUp(target);
+                } else {
+
             Injured target = (decisionLogic != null)
                     ? decisionLogic.selectVictim(rescuer, candidates)
                     : null;
@@ -57,6 +66,7 @@ public class AgentController {
                     rescuer.pickUp(target);
                 } else {
                     // اگر به هر دلیل نرسید (مسیر مسدود شد)، فلگ را آزاد کن
+
                     target.setBeingRescued(false);
                 }
             }
@@ -66,6 +76,11 @@ public class AgentController {
         // --- 2) اگر در حال حمل است: به نزدیک‌ترین بیمارستان برو ---
         if (rescuer.isCarryingVictim()) {
             Injured carried = rescuer.getCarryingVictim();
+
+            Hospital nearestHospital = findNearestHospital(rescuer.getPosition(), hospitals);
+            List<Position> pathToHospital = pathFinder.findPath(rescuer.getPosition(), nearestHospital.getPosition());
+            if (moveAlongPath(rescuer, pathToHospital)) {
+
             Hospital nearest = findNearestHospital(rescuer.getPosition(), hospitals);
             if (nearest == null || nearest.getPosition() == null) return;
 
@@ -75,11 +90,21 @@ public class AgentController {
 
             boolean delivered = moveAlongPath(rescuer, pathToHospital);
             if (delivered) {
+
                 rescuer.dropVictim();
                 if (carried != null) carried.setBeingRescued(false);
             }
         }
     }
+
+    // حرکت نجات‌دهنده در طول مسیر مشخص شده
+    private boolean moveAlongPath(Rescuer rescuer, List<Position> path) {
+        if (rescuer == null || path == null || path.isEmpty()) return false;
+        Position current = rescuer.getPosition();
+        for (Position step : path) {
+            if (step.equals(current)) continue;
+            int dir = determineDirection(current, step);
+            if (!MoveGuard.tryMoveTo(map, rescuer, step.getX(), step.getY(), dir)) {
 
     // -------------------- کمکی‌های حرکت --------------------
 
@@ -99,12 +124,23 @@ public class AgentController {
             boolean ok = MoveGuard.tryMoveTo(map, rescuer, step.getX(), step.getY(), dir);
             if (!ok) {
                 // مسیر مسدود شد یا تایل مقصد walkable نبود
+
                 return false;
             }
             current = step;
         }
         return true;
     }
+
+    // تعیین جهت بر اساس دلتا بین دو موقعیت (0=پایین،1=چپ،2=راست،3=بالا)
+    private int determineDirection(Position from, Position to) {
+        int dx = to.getX() - from.getX();
+        int dy = to.getY() - from.getY();
+        if (dx == 1) return 2;      // راست
+        if (dx == -1) return 1;     // چپ
+        if (dy == 1) return 0;      // پایین
+        if (dy == -1) return 3;     // بالا
+        return 0;                   // پیش‌فرض
 
     /** تعیین جهت بر اساس دلتا بین دو خانه (0=پایین،1=چپ،2=راست،3=بالا) */
     private int determineDirection(Position from, Position to) {
@@ -118,6 +154,7 @@ public class AgentController {
 
         // در صورت حرکت غیر چهارجهته (مثلاً مورب) پیش‌فرض پایین
         return 0;
+
     }
 
     // -------------------- کمکی‌های انتخاب بیمارستان --------------------

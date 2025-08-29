@@ -63,8 +63,6 @@ public class GamePanel extends JPanel {
             setPreferredSize(new Dimension(viewWidth * tileSize,
                     viewHeight * tileSize));}
 
-
-
         setFocusable(true);
         requestFocusInWindow();
         setDoubleBuffered(true);
