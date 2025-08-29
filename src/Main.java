@@ -116,11 +116,13 @@ public class Main {
             for (int x = map.getWidth() - 1; x >= 0; x--) {
                 Cell c = map.getCell(x, y);
                 if (c != null && c.getType() == Cell.Type.ROAD && !c.isOccupied()) {
+
                     return new Position(x, y);
                 }
                 if (c == null && collisionMap != null && collisionMap.isWalkable(x, y)) {
                     // در صورتی که CollisionMap آن را قابل عبور بداند ولی سلول وجود ندارد
                     map.setCell(x, y, new Cell(new Position(x, y), Cell.Type.ROAD));
+
                     return new Position(x, y);
                 }
             }
