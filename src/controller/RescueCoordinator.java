@@ -2,6 +2,7 @@ package controller;
 
 import agent.AgentController;
 import agent.AgentManager;
+import map.CityMap;
 import map.Hospital;
 import strategy.IAgentDecision;
 import strategy.IPathFinder;
@@ -25,13 +26,14 @@ public class RescueCoordinator {
     public RescueCoordinator(AgentManager agentManager,
                              VictimManager victimManager,
                              List<Hospital> hospitals,
+                             CityMap map,
                              IPathFinder pathFinder,
                              IAgentDecision decisionLogic) {
 
         this.agentManager = agentManager;
         this.victimManager = victimManager;
         this.hospitals = hospitals;
-        this.agentController = new AgentController(pathFinder, decisionLogic);
+        this.agentController = new AgentController(map, pathFinder, decisionLogic);
     }
 
     // اجرای یک دور عملیات نجات برای همه نجات‌دهنده‌ها
