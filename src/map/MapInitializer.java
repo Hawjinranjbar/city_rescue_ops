@@ -53,11 +53,11 @@ public class MapInitializer {
 
         CityMap map = new CityMap(gridW, gridH, tileSize, tileSize);
 
-        // 1) پیش‌فرض: همه RUBBLE
+        // 1) پیش‌فرض: همه مانع (OBSTACLE)
         int y, x;
         for (y = 0; y < gridH; y++) {
             for (x = 0; x < gridW; x++) {
-                map.setCell(x, y, new Cell(new Position(x, y), Cell.Type.RUBBLE));
+                map.setCell(x, y, new Cell(new Position(x, y), Cell.Type.OBSTACLE));
             }
         }
 
@@ -111,7 +111,7 @@ public class MapInitializer {
                 } else if (isRoad) {
                     map.setCell(x, y, new Cell(new Position(x, y), Cell.Type.ROAD));
                 }
-                // else همان RUBBLE می‌ماند
+                // else همان مانع باقی می‌ماند
             }
         }
 

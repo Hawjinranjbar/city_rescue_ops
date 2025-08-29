@@ -1,6 +1,7 @@
 package map;
 
 import util.Position;
+import util.CollisionMap;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,6 +20,7 @@ public class CityMap {
     private final int tileWidth;   // عرض هر تایل (پیکسل)
     private final int tileHeight;  // ارتفاع هر تایل (پیکسل)
     private final Cell[][] grid;   // grid[y][x]
+    private CollisionMap collisionMap;   // نگاشت برخورد (اختیاری)
 
     // --- سازنده‌ها ---
     public CityMap(int width, int height) {
@@ -79,8 +81,14 @@ public class CityMap {
     /** آیا تایل (x,y) قابل عبور و غیر اشغال است؟ */
     public boolean isWalkable(int x, int y) {
         if (!isValid(x, y)) return false;
+
+        // اگر CollisionMap موجود باشد، walkable بودن از آن خوانده می‌شود
+        if (collisionMap != null && !collisionMap.isWalkable(x, y)) {
+            return false;
+        }
+
         Cell c = grid[y][x];
-        return c != null && c.isWalkable() && !c.isOccupied();
+        return c != null && !c.isOccupied() && (collisionMap != null || c.isWalkable());
     }
 
     /** آیا مختصات پیکسلی (px,py) روی تایلِ قابل عبور و غیر اشغال می‌افتد؟ */
@@ -121,6 +129,10 @@ public class CityMap {
     public int pixelToTileY(int py) { return py / tileHeight; }
     public int tileToPixelX(int tx) { return tx * tileWidth; }
     public int tileToPixelY(int ty) { return ty * tileHeight; }
+
+    // --- تزریق/دریافت CollisionMap ---
+    public void setCollisionMap(CollisionMap cm) { this.collisionMap = cm; }
+    public CollisionMap getCollisionMap() { return collisionMap; }
 
     // --- مدیریت نقشه ---
 
