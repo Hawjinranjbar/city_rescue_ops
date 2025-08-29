@@ -26,18 +26,12 @@ public class Main {
                     // 1) لود نقشه از TMX
                     map = MapLoader.loadTMX("assets/maps/rescue_city.tmx");
 
-                    // 2) ساخت نجات‌دهنده
+                    // 2) ساخت نجات‌دهنده و قرار دادن آن در پایین‌سمت راست جاده
                     List<Rescuer> rescuers = new ArrayList<>();
-                    r = new Rescuer(1, new Position(5, 5));
-                    // اگر خانه‌ی شروع غیرقابل عبور بود، اولین خانه‌ی مجاز را پیدا کن
-                    if (!isWalkable(r.getPosition())) {
-                        Position start = findFirstWalkable();
-                        r.setPosition(start);
-                    }
-                    // اشغال‌کردن خانه‌ی شروع
-                    Cell startCell = map.getCell(r.getPosition().getX(), r.getPosition().getY());
+                    Position start = findBottomRightRoad();
+                    r = new Rescuer(1, start);
+                    Cell startCell = map.getCell(start.getX(), start.getY());
                     if (startCell != null) startCell.setOccupied(true);
-
                     rescuers.add(r);
 
                     // 3) ساخت پنل بازی
@@ -112,18 +106,12 @@ public class Main {
         });
     }
 
-    // --- ابزار عبورپذیری برای خانه‌ی شروع ---
-    private static boolean isWalkable(Position p) {
-        if (p == null || !map.isValid(p.getX(), p.getY())) return false;
-        Cell c = map.getCell(p.getX(), p.getY());
-        return c != null && c.isWalkable() && !c.isOccupied();
-    }
-
-    private static Position findFirstWalkable() {
-        for (int y = 0; y < map.getHeight(); y++) {
-            for (int x = 0; x < map.getWidth(); x++) {
+    // --- پیدا کردن نزدیک‌ترین جاده به گوشه‌ی پایین‌راست ---
+    private static Position findBottomRightRoad() {
+        for (int y = map.getHeight() - 1; y >= 0; y--) {
+            for (int x = map.getWidth() - 1; x >= 0; x--) {
                 Cell c = map.getCell(x, y);
-                if (c != null && c.isWalkable() && !c.isOccupied()) {
+                if (c != null && c.getType() == Cell.Type.ROAD && !c.isOccupied()) {
                     return new Position(x, y);
                 }
             }
