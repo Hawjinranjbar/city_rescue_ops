@@ -6,6 +6,7 @@ import strategy.IPathFinder;
 import strategy.IAgentDecision;
 import util.MoveGuard;
 import util.Position;
+import util.CollisionMap;
 import victim.Injured;
 
 import java.util.List;
@@ -20,9 +21,11 @@ public class AgentController {
     private final IPathFinder pathFinder;
     private final IAgentDecision decisionLogic;
     private final CityMap map;
+    private final CollisionMap collisionMap;
 
-    public AgentController(CityMap map, IPathFinder pathFinder, IAgentDecision decisionLogic) {
+    public AgentController(CityMap map, CollisionMap collisionMap, IPathFinder pathFinder, IAgentDecision decisionLogic) {
         this.map = map;
+        this.collisionMap = collisionMap;
         this.pathFinder = pathFinder;
         this.decisionLogic = decisionLogic;
     }
@@ -60,7 +63,7 @@ public class AgentController {
         for (Position step : path) {
             if (step.equals(current)) continue;
             int dir = determineDirection(current, step);
-            if (!MoveGuard.tryMoveTo(map, rescuer, step.getX(), step.getY(), dir)) {
+            if (!MoveGuard.tryMoveTo(map, collisionMap, rescuer, step.getX(), step.getY(), dir)) {
                 return false;
             }
             current = step;
