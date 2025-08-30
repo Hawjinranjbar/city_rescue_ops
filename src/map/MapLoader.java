@@ -148,9 +148,11 @@ public final class MapLoader {
                 BufferedImage tileImage = owner.getSubImage(gid);
 
                 // نوع سلول از property ها
+
                 // اگر هیچ property تعریف نشده باشد، فرض را بر جادهٔ قابل عبور می‌گذاریم
                 Cell.Type type = Cell.Type.ROAD; // پیش‌فرض جدید
                 boolean walkable = true;
+
 
                 int localId = gid - owner.firstGid;
                 Element tileElem = owner.findTileElement(localId);

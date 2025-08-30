@@ -27,7 +27,8 @@ public class Main {
                 try {
                     // 1) Load map + collision
                     map = MapLoader.loadTMX("assets/maps/rescue_city.tmx");
-                    collisionMap = CollisionMap.fromTMX("assets/maps/rescue_city.tmx");
+                    collisionMap = CollisionMap.fromMask("assets/maps/Road.png",
+                            map.getTileWidth(), map.getTileHeight());
                     map.setCollisionMap(collisionMap);
 
                     // 2) Spawn rescuer at nearest road (bottom-right search)
@@ -108,14 +109,13 @@ public class Main {
             for (int x = map.getWidth() - 1; x >= 0; x--) {
                 Cell c = map.getCell(x, y);
 
-                boolean walkableByMask = (collisionMap != null) && collisionMap.isWalkable(x, y);
-                boolean isRoadCell     = (c != null) && c.getType() == Cell.Type.ROAD;
-                boolean free           = (c == null) || !c.isOccupied();
+                boolean walkable = (collisionMap != null)
+                        ? collisionMap.isWalkable(x, y)
+                        : (c != null && c.getType() == Cell.Type.ROAD);
+                boolean free = (c == null) || !c.isOccupied();
 
-                if ((walkableByMask || isRoadCell) && free) {
-                    // اگر سلول وجود ندارد یا نوعش جاده نیست، یک سلول جاده بساز تا HUD/Renderer هم بداند
+                if (walkable && free) {
                     if (c == null || c.getType() != Cell.Type.ROAD) {
-                        // اگر سازنده‌ی Cell شما امضای دیگری دارد، همین خط را مطابق پروژه‌ات تنظیم کن
                         map.setCell(x, y, new Cell(new Position(x, y), Cell.Type.ROAD));
                     }
                     return new Position(x, y);
