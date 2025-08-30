@@ -18,10 +18,15 @@ public final class MoveGuard {
 
     private MoveGuard() { }
 
-    /** حرکت به مقصد مطلق (nx,ny) با جهت dir و بررسی CollisionMap. */
-    public static boolean tryMoveTo(CityMap map, CollisionMap collision, Rescuer r, int nx, int ny, int dir) {
-        if (map == null || collision == null || r == null || r.getPosition() == null) return false;
-        if (!map.isValid(nx, ny) || !collision.isWalkable(nx, ny)) return false;
+    /**
+     * حرکت به مقصد مطلق (nx,ny) با جهت dir.
+     * اگر CollisionMap وجود داشته باشد ولی propertyهای مربوطه در فایل TMX تعریف نشده
+     * باشند، با تکیه بر اطلاعات خود Cell تعیین می‌کنیم که سلول قابل عبور است یا نه.
+     */
+    public static boolean tryMoveTo(CityMap map, CollisionMap collision, Rescuer r,
+                                    int nx, int ny, int dir) {
+        if (map == null || r == null || r.getPosition() == null) return false;
+        if (!map.isValid(nx, ny)) return false;
 
         // اگر مقصد همان جای فعلی است: فقط جهت/فریم را آپدیت کن
         if (r.getPosition().getX() == nx && r.getPosition().getY() == ny) {
@@ -31,27 +36,15 @@ public final class MoveGuard {
         }
 
         final Cell dest = map.getCell(nx, ny);
-
-
-
-        if (dest == null || dest.isOccupied()) return false;
-
         if (dest == null) return false;
 
-        // فقط اجازه‌ی حرکت روی سلول‌های جاده یا بیمارستان که خالی باشند
-        Cell.Type type = dest.getType();
-        if ((type != Cell.Type.ROAD && type != Cell.Type.HOSPITAL) || dest.isOccupied()) {
+        // اگر CollisionMap حرکت را ممنوع کرده اما خود سلول walkable نیست، رد کن
+        if (collision != null && !collision.isWalkable(nx, ny) && !dest.isWalkable()) {
             return false;
         }
 
         // فقط اجازه‌ی حرکت روی سلول‌های قابل عبور و خالی
         if (!dest.isWalkable() || dest.isOccupied()) return false;
-
-
-
-        // فقط اجازه‌ی حرکت روی جاده‌های خالی
-        if (dest.getType() != Cell.Type.ROAD || dest.isOccupied()) return false;
-
 
         // آزاد کردن سلول فعلی (اگر معتبر بود)
         int cx = r.getPosition().getX();
@@ -75,8 +68,9 @@ public final class MoveGuard {
     }
 
     /** حرکت نسبی بر اساس دلتا (dx,dy) با جهت dir. */
-    public static boolean tryMoveDelta(CityMap map, CollisionMap collision, Rescuer r, int dx, int dy, int dir) {
-        if (map == null || collision == null || r == null || r.getPosition() == null) return false;
+    public static boolean tryMoveDelta(CityMap map, CollisionMap collision, Rescuer r,
+                                       int dx, int dy, int dir) {
+        if (map == null || r == null || r.getPosition() == null) return false;
         final int nx = r.getPosition().getX() + dx;
         final int ny = r.getPosition().getY() + dy;
         return tryMoveTo(map, collision, r, nx, ny, dir);
