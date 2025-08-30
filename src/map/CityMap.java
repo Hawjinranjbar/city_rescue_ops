@@ -82,13 +82,16 @@ public class CityMap {
     public boolean isWalkable(int x, int y) {
         if (!isValid(x, y)) return false;
 
-        // اگر CollisionMap موجود باشد، walkable بودن از آن خوانده می‌شود
-        if (collisionMap != null && !collisionMap.isWalkable(x, y)) {
-            return false;
+        Cell c = grid[y][x];
+        if (c == null || c.isOccupied()) return false;
+
+        // اگر CollisionMap وجود دارد و آن سلول را قابل عبور علامت زده باشد، قبول
+        if (collisionMap != null && collisionMap.isWalkable(x, y)) {
+            return true;
         }
 
-        Cell c = grid[y][x];
-        return c != null && !c.isOccupied() && (collisionMap != null || c.isWalkable());
+        // در غیر این صورت، به نوع سلول تکیه می‌کنیم
+        return c.isWalkable();
     }
 
     /** آیا مختصات پیکسلی (px,py) روی تایلِ قابل عبور و غیر اشغال می‌افتد؟ */
