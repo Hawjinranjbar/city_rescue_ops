@@ -146,6 +146,10 @@ public class CollisionMap {
                     }
                 }
                 cm.walkable[ty][tx] = walk;
+
+                int rgb = img.getRGB(px, py) & 0xFFFFFF;
+                cm.walkable[ty][tx] = rgb != 0x000000;
+
             }
         }
         return cm;

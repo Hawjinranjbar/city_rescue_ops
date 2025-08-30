@@ -49,6 +49,18 @@ public final class MoveGuard {
         // در هر صورت روی سلول اشغال‌شده اجازه حرکت نده
         if (dest.isOccupied()) return false;
 
+
+
+        
+        // اگر CollisionMap حرکت را ممنوع کرده اما خود سلول walkable نیست، رد کن
+        if (collision != null && !collision.isWalkable(nx, ny) && !dest.isWalkable()) {
+            return false;
+        }
+
+        // فقط اجازه‌ی حرکت روی سلول‌های قابل عبور و خالی
+        if (!dest.isWalkable() || dest.isOccupied()) return false;
+
+
         // آزاد کردن سلول فعلی (اگر معتبر بود)
         int cx = r.getPosition().getX();
         int cy = r.getPosition().getY();
