@@ -148,7 +148,8 @@ public final class MapLoader {
                 BufferedImage tileImage = owner.getSubImage(gid);
 
                 // نوع سلول از property ها
-                Cell.Type type = Cell.Type.OBSTACLE; // پیش‌فرض
+                // اگر هیچ property تعریف نشده باشد، نوع مشخصی نداریم
+                Cell.Type type = Cell.Type.EMPTY;
                 boolean walkable = false;
 
                 int localId = gid - owner.firstGid;
@@ -175,9 +176,11 @@ public final class MapLoader {
                     }
                 }
 
-                // walkable به‌تنهایی → ROAD
-                if (walkable && type == Cell.Type.OBSTACLE) {
+                // هماهنگ‌سازی نوع سلول با وضعیت walkable
+                if (walkable && type == Cell.Type.EMPTY) {
                     type = Cell.Type.ROAD;
+                } else if (!walkable && type == Cell.Type.ROAD) {
+                    type = Cell.Type.OBSTACLE;
                 }
 
                 // (اختیاری) fallback ساده به‌ازای GID

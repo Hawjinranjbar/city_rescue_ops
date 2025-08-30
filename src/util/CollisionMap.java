@@ -123,6 +123,34 @@ public class CollisionMap {
         return cm;
     }
 
+    /**
+     * ساخت CollisionMap از ماسک PNG که در آن هر بلوک tileWidth×tileHeight معرف یک تایل است.
+     * پیکسل سفید ⇒ قابل عبور، سیاه ⇒ غیرقابل عبور.
+     */
+    public static CollisionMap fromMask(String maskPath, int tileWidth, int tileHeight) throws IOException {
+        BufferedImage img = ImageIO.read(new File(maskPath));
+        int w = img.getWidth() / tileWidth;
+        int h = img.getHeight() / tileHeight;
+        CollisionMap cm = new CollisionMap(w, h);
+
+        for (int ty = 0; ty < h; ty++) {
+            for (int tx = 0; tx < w; tx++) {
+                int px = tx * tileWidth;
+                int py = ty * tileHeight;
+
+                boolean walk = false;
+                for (int oy = 0; oy < tileHeight && !walk; oy++) {
+                    for (int ox = 0; ox < tileWidth; ox++) {
+                        int rgb = img.getRGB(px + ox, py + oy) & 0xFFFFFF;
+                        if (rgb != 0x000000) { walk = true; break; }
+                    }
+                }
+                cm.walkable[ty][tx] = walk;
+            }
+        }
+        return cm;
+    }
+
     public int getWidth() { return width; }
     public int getHeight() { return height; }
 }
