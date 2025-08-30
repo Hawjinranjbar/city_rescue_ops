@@ -149,9 +149,9 @@ public final class MapLoader {
 
                 // نوع سلول از property ها
 
-                // اگر هیچ property تعریف نشده باشد، فرض را بر جادهٔ قابل عبور می‌گذاریم
-                Cell.Type type = Cell.Type.ROAD; // پیش‌فرض جدید
-                boolean walkable = true;
+                // پیش‌فرض: غیرقابل‌عبور تا زمانی که مشخص شود
+                Cell.Type type = Cell.Type.EMPTY;
+                boolean walkable = false;
 
 
 
@@ -174,7 +174,8 @@ public final class MapLoader {
                                     || "rubble".equalsIgnoreCase(value))     type = Cell.Type.OBSTACLE;
                             else if ("empty".equalsIgnoreCase(value))      type = Cell.Type.EMPTY;
                         } else if (name.equalsIgnoreCase("walkable")) {
-                            walkable = Boolean.parseBoolean(value);
+                            // Tiled ممکن است true/false یا 1/0 خروجی دهد
+                            walkable = "true".equalsIgnoreCase(value) || "1".equals(value);
                         }
                     }
                 }
