@@ -25,10 +25,9 @@ public class Main {
         SwingUtilities.invokeLater(new Runnable() {
             @Override public void run() {
                 try {
-                    // 1) Load map + collision
+                    // 1) Load map + collision directly from TMX properties
                     map = MapLoader.loadTMX("assets/maps/rescue_city.tmx");
-                    collisionMap = CollisionMap.fromMask("assets/maps/Road.png",
-                            map.getTileWidth(), map.getTileHeight());
+                    collisionMap = CollisionMap.fromTMX("assets/maps/rescue_city.tmx");
                     map.setCollisionMap(collisionMap);
 
                     // 2) Spawn rescuer at nearest road (bottom-right search)
