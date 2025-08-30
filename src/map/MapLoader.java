@@ -200,6 +200,14 @@ public final class MapLoader {
         return cityMap;
     }
 
+    /**
+     * Backward-compatible alias for older callers expecting {@code loadMap}.
+     * Simply delegates to {@link #loadTMX(String)}.
+     */
+    public static CityMap loadMap(String tmxPath) throws Exception {
+        return loadTMX(tmxPath);
+    }
+
     private static int parseIntOr(String s, int def) {
         try { return Integer.parseInt(s); } catch (Exception e) { return def; }
     }
