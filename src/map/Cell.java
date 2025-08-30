@@ -17,7 +17,24 @@ public class Cell {
         OBSTACLE,   // مانع مانند خودرو یا آوار
         BUILDING,   // ساختمان‌ها / غیرقابل عبور
         HOSPITAL,   // نقطه تحویل مجروح
-        EMPTY       // سلول خالی یا تعریف‌نشده
+        EMPTY;      // سلول خالی یا تعریف‌نشده
+
+        /**
+         * آیا این نوع سلول قابل عبور است؟
+         *<p>
+         * در برخی کلاس‌ها نسخه‌های قدیمی متدی با نام {@code walkable()}
+         * فراخوانی می‌شد که وجود نداشت و باعث خطای کامپایل می‌گردید.
+         * برای سازگاری به عقب، هر دو نام {@link #isWalkable()} و
+         * {@link #walkable()} در دسترس هستند.
+         */
+        public boolean isWalkable() {
+            return this == ROAD || this == HOSPITAL;
+        }
+
+        /** سازگاری با کد قدیمی که به جای isWalkable از walkable استفاده می‌کرد. */
+        public boolean walkable() {
+            return isWalkable();
+        }
     }
 
     private final Position position;     // موقعیت سلول در نقشه
@@ -52,7 +69,7 @@ public class Cell {
     public Type getType() { return type; }
 
     public boolean isWalkable() {
-        return type == Type.ROAD || type == Type.HOSPITAL;
+        return type.isWalkable();
     }
 
 
