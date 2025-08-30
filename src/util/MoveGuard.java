@@ -38,13 +38,16 @@ public final class MoveGuard {
         final Cell dest = map.getCell(nx, ny);
         if (dest == null) return false;
 
-        // اگر CollisionMap حرکت را ممنوع کرده اما خود سلول walkable نیست، رد کن
-        if (collision != null && !collision.isWalkable(nx, ny) && !dest.isWalkable()) {
-            return false;
+        // اگر نگاشت برخورد وجود دارد، صرفاً به همان تکیه کن
+        if (collision != null) {
+            if (!collision.isWalkable(nx, ny)) return false;
+        } else {
+            // در نبود CollisionMap باید خود سلول قابل عبور باشد
+            if (!dest.isWalkable()) return false;
         }
 
-        // فقط اجازه‌ی حرکت روی سلول‌های قابل عبور و خالی
-        if (!dest.isWalkable() || dest.isOccupied()) return false;
+        // در هر صورت روی سلول اشغال‌شده اجازه حرکت نده
+        if (dest.isOccupied()) return false;
 
         // آزاد کردن سلول فعلی (اگر معتبر بود)
         int cx = r.getPosition().getX();
