@@ -132,12 +132,24 @@ public class CollisionMap {
         int w = img.getWidth() / tileWidth;
         int h = img.getHeight() / tileHeight;
         CollisionMap cm = new CollisionMap(w, h);
+
         for (int ty = 0; ty < h; ty++) {
             for (int tx = 0; tx < w; tx++) {
                 int px = tx * tileWidth;
                 int py = ty * tileHeight;
+
+                boolean walk = false;
+                for (int oy = 0; oy < tileHeight && !walk; oy++) {
+                    for (int ox = 0; ox < tileWidth; ox++) {
+                        int rgb = img.getRGB(px + ox, py + oy) & 0xFFFFFF;
+                        if (rgb != 0x000000) { walk = true; break; }
+                    }
+                }
+                cm.walkable[ty][tx] = walk;
+
                 int rgb = img.getRGB(px, py) & 0xFFFFFF;
                 cm.walkable[ty][tx] = rgb != 0x000000;
+
             }
         }
         return cm;

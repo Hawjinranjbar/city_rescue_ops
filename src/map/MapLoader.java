@@ -154,6 +154,7 @@ public final class MapLoader {
                 boolean walkable = true;
 
 
+
                 int localId = gid - owner.firstGid;
                 Element tileElem = owner.findTileElement(localId);
                 if (tileElem != null) {
@@ -178,8 +179,15 @@ public final class MapLoader {
                     }
                 }
 
+
+                // هماهنگ‌سازی نوع سلول با وضعیت walkable
+                if (walkable && type == Cell.Type.EMPTY) {
+                    type = Cell.Type.ROAD;
+                } else if (!walkable && type == Cell.Type.ROAD) {
+
                 // اگر مشخصاً غیرقابل عبور باشد ولی نوعی تعیین نشده، آن را مانع فرض کن
                 if (!walkable && (type == Cell.Type.ROAD || type == Cell.Type.EMPTY)) {
+
                     type = Cell.Type.OBSTACLE;
                 }
 
