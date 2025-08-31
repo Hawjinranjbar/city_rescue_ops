@@ -14,17 +14,16 @@ import java.util.List;
 /**
  * Loader ساده برای TMX (نقشه‌های Tiled).
  * - فقط لایه‌ی اول (CSV)
- * - tileset با یک <image>
- * - تعیین نوع Cell بر اساس property:
- *   - property name="type": road/hospital/building/obstacle/empty
- *   - property name="walkable": true/false
- * - اگر walkable=true و type مشخص نبود → ROAD
+ * - tileset تک‌تصویر
+ * - تعیین نوع Cell از propertyهای تایل:
+ *     type: road / hospital / rubble / building / obstacle / car / empty
+ *     walkable: true/false (یا 1/0)
  */
 public final class MapLoader {
 
     private MapLoader() { }
 
-    /** 30 بیت پایین GID واقعی است (پرچم‌های flip را حذف می‌کنیم) */
+    /** 30 بیت پایین GID واقعی است (پرچم‌های flip حذف می‌شود). */
     private static final long GID_MASK = 0x0FFFFFFFL;
 
     /** اطلاعات tileset */
@@ -39,9 +38,7 @@ public final class MapLoader {
         BufferedImage image;
         Element tilesetElement;
 
-        boolean owns(int gid) {
-            return gid >= firstGid && gid < firstGid + tileCount;
-        }
+        boolean owns(int gid) { return gid >= firstGid && gid < firstGid + tileCount; }
 
         BufferedImage getSubImage(int gid) {
             int localId = gid - firstGid;
@@ -89,6 +86,7 @@ public final class MapLoader {
             info.firstGid = Integer.parseInt(ts.getAttribute("firstgid"));
 
             Element img = (Element) ts.getElementsByTagName("image").item(0);
+            if (img == null) continue;
             String src = img.getAttribute("source");
             File imgFile = new File(baseDir, src);
             info.image = AssetLoader.requireImage(imgFile.getPath());
@@ -96,18 +94,18 @@ public final class MapLoader {
             if (ts.hasAttribute("margin"))  info.margin  = parseIntOr(ts.getAttribute("margin"), 0);
             if (ts.hasAttribute("spacing")) info.spacing = parseIntOr(ts.getAttribute("spacing"), 0);
 
-            info.tileWidth  = ts.hasAttribute("tilewidth")  ? Integer.parseInt(ts.getAttribute("tilewidth"))  : tileWidth;
-            info.tileHeight = ts.hasAttribute("tileheight") ? Integer.parseInt(ts.getAttribute("tileheight")) : tileHeight;
+            info.tileWidth  = ts.hasAttribute("tilewidth")  ? parseIntOr(ts.getAttribute("tilewidth"),  tileWidth)  : tileWidth;
+            info.tileHeight = ts.hasAttribute("tileheight") ? parseIntOr(ts.getAttribute("tileheight"), tileHeight) : tileHeight;
 
             if (ts.hasAttribute("columns")) {
-                info.columns = Integer.parseInt(ts.getAttribute("columns"));
+                info.columns = parseIntOr(ts.getAttribute("columns"), 1);
             } else {
                 int imgW = info.image.getWidth();
                 info.columns = Math.max(1, (imgW - info.margin + info.spacing) / (info.tileWidth + info.spacing));
             }
 
             if (ts.hasAttribute("tilecount")) {
-                info.tileCount = Integer.parseInt(ts.getAttribute("tilecount"));
+                info.tileCount = parseIntOr(ts.getAttribute("tilecount"), 0);
             } else {
                 int imgH = info.image.getHeight();
                 int rows = Math.max(1, (imgH - info.margin + info.spacing) / (info.tileHeight + info.spacing));
@@ -130,10 +128,10 @@ public final class MapLoader {
         // ---- پر کردن نقشه ----
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
-                String s = tokens[y * width + x].trim();
-                if (s.isEmpty()) continue;
+                String tok = tokens[y * width + x].trim();
+                if (tok.isEmpty()) continue;
 
-                long raw = Long.parseUnsignedLong(s);
+                long raw = Long.parseUnsignedLong(tok);
                 int gid = (int) (raw & GID_MASK);
                 if (gid == 0) continue; // خانه خالی
 
@@ -144,16 +142,11 @@ public final class MapLoader {
                 }
                 if (owner == null) continue;
 
-                // تصویر تایل
                 BufferedImage tileImage = owner.getSubImage(gid);
 
-                // نوع سلول از property ها
-
-                // پیش‌فرض: غیرقابل‌عبور تا زمانی که مشخص شود
-                Cell.Type type = Cell.Type.EMPTY;
+                // --- نوع سلول از property ها ---
+                Cell.Type type = Cell.Type.EMPTY; // پیش‌فرض: غیرقابل عبور
                 boolean walkable = false;
-
-
 
                 int localId = gid - owner.firstGid;
                 Element tileElem = owner.findTileElement(localId);
@@ -168,29 +161,25 @@ public final class MapLoader {
                         if (name.equalsIgnoreCase("type")) {
                             if ("road".equalsIgnoreCase(value))            type = Cell.Type.ROAD;
                             else if ("hospital".equalsIgnoreCase(value))   type = Cell.Type.HOSPITAL;
-                            else if ("building".equalsIgnoreCase(value))   type = Cell.Type.BUILDING;
-                            else if ("obstacle".equalsIgnoreCase(value)
+                                // هر نوع مانع → RUBBLE (با enum فعلی سازگار)
+                            else if ("rubble".equalsIgnoreCase(value)
+                                    || "building".equalsIgnoreCase(value)
+                                    || "obstacle".equalsIgnoreCase(value)
                                     || "car".equalsIgnoreCase(value)
-                                    || "rubble".equalsIgnoreCase(value))     type = Cell.Type.OBSTACLE;
+                                    || "wall".equalsIgnoreCase(value))        type = Cell.Type.RUBBLE;
                             else if ("empty".equalsIgnoreCase(value))      type = Cell.Type.EMPTY;
                         } else if (name.equalsIgnoreCase("walkable")) {
-                            // Tiled ممکن است true/false یا 1/0 خروجی دهد
                             walkable = "true".equalsIgnoreCase(value) || "1".equals(value);
                         }
                     }
                 }
 
-
-                // هماهنگ‌سازی نوع سلول با وضعیت walkable
+                // هماهنگ‌سازی نهایی با walkable
                 if (walkable && type == Cell.Type.EMPTY) {
                     type = Cell.Type.ROAD;
                 } else if (!walkable && (type == Cell.Type.ROAD || type == Cell.Type.EMPTY)) {
-                    // اگر مشخصاً غیرقابل عبور باشد ولی نوعی تعیین نشده، آن را مانع فرض کن
-                    type = Cell.Type.OBSTACLE;
+                    type = Cell.Type.RUBBLE;
                 }
-
-                // (اختیاری) fallback ساده به‌ازای GID
-                // if (type == Cell.Type.OBSTACLE && gid == 25) type = Cell.Type.HOSPITAL;
 
                 Cell cell = new Cell(new Position(x, y), type, tileImage, gid);
                 cityMap.setCell(x, y, cell);
@@ -200,15 +189,13 @@ public final class MapLoader {
         return cityMap;
     }
 
-    /**
-     * Backward-compatible alias for older callers expecting {@code loadMap}.
-     * Simply delegates to {@link #loadTMX(String)}.
-     */
+    /** alias برای سازگاری با کد قدیمی: */
     public static CityMap loadMap(String tmxPath) throws Exception {
         return loadTMX(tmxPath);
     }
 
     private static int parseIntOr(String s, int def) {
-        try { return Integer.parseInt(s); } catch (Exception e) { return def; }
+        try { return Integer.parseInt(s); }
+        catch (Exception e) { return def; }
     }
 }
