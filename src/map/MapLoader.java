@@ -10,15 +10,10 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 
-/**
- * Loader ساده برای TMX (نقشه‌های Tiled).
- * - فقط لایه‌ی اول (CSV)
- * - tileset تک‌تصویر
- * - تعیین نوع Cell از propertyهای تایل:
- *     type: road / hospital / rubble / building / obstacle / car / empty
- *     walkable: true/false (یا 1/0)
- */
+
 public final class MapLoader {
 
     private MapLoader() { }
@@ -144,9 +139,17 @@ public final class MapLoader {
 
                 BufferedImage tileImage = owner.getSubImage(gid);
 
+
+                // نوع سلول از property ها
+
+                // پیش‌فرض: غیرقابل‌عبور تا زمانی که مشخص شود
+                Cell.Type type = Cell.Type.EMPTY;
+                boolean walkable = false;
+                Map<String, String> propMap = new HashMap<>();
                 // --- نوع سلول از property ها ---
                 Cell.Type type = Cell.Type.EMPTY; // پیش‌فرض: غیرقابل عبور
                 boolean walkable = false;
+ 
 
                 int localId = gid - owner.firstGid;
                 Element tileElem = owner.findTileElement(localId);
@@ -158,8 +161,12 @@ public final class MapLoader {
                         String value = prop.getAttribute("value");
                         if (name == null) continue;
 
+                        propMap.put(name, value);
+
                         if (name.equalsIgnoreCase("type")) {
                             if ("road".equalsIgnoreCase(value))            type = Cell.Type.ROAD;
+                            else if ("sidewalk".equalsIgnoreCase(value))   type = Cell.Type.SIDEWALK;
+                            else if ("ground".equalsIgnoreCase(value))     type = Cell.Type.GROUND;
                             else if ("hospital".equalsIgnoreCase(value))   type = Cell.Type.HOSPITAL;
                                 // هر نوع مانع → RUBBLE (با enum فعلی سازگار)
                             else if ("rubble".equalsIgnoreCase(value)
@@ -169,14 +176,20 @@ public final class MapLoader {
                                     || "wall".equalsIgnoreCase(value))        type = Cell.Type.RUBBLE;
                             else if ("empty".equalsIgnoreCase(value))      type = Cell.Type.EMPTY;
                         } else if (name.equalsIgnoreCase("walkable")) {
-                            walkable = "true".equalsIgnoreCase(value) || "1".equals(value);
+             walkable = "true".equalsIgnoreCase(value) || "1".equals(value);
                         }
                     }
                 }
+                cityMap.registerTileProperties(gid, propMap);
 
                 // هماهنگ‌سازی نهایی با walkable
                 if (walkable && type == Cell.Type.EMPTY) {
                     type = Cell.Type.ROAD;
+
+                } else if (!walkable && (type == Cell.Type.ROAD || type == Cell.Type.SIDEWALK
+                        || type == Cell.Type.GROUND || type == Cell.Type.EMPTY)) {
+                    // اگر مشخصاً غیرقابل عبور باشد ولی نوعی تعیین نشده، آن را مانع فرض کن
+                    type = Cell.Type.OBSTACLE;
                 } else if (!walkable && (type == Cell.Type.ROAD || type == Cell.Type.EMPTY)) {
                     type = Cell.Type.RUBBLE;
                 }
@@ -189,7 +202,7 @@ public final class MapLoader {
         return cityMap;
     }
 
-    /** alias برای سازگاری با کد قدیمی: */
+
     public static CityMap loadMap(String tmxPath) throws Exception {
         return loadTMX(tmxPath);
     }

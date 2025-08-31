@@ -13,19 +13,26 @@ import java.awt.image.BufferedImage;
 public class Cell {
 
     public enum Type {
-        // قابل عبور
-        ROAD,        // جاده/پیاده‌رو
-        HOSPITAL,    // نقطهٔ تحویل
 
-        // غیرقابل عبور
-        RUBBLE,      // آوار/خاک/سنگ (برای سازگاری با MapLoader)
-        OBSTACLE,    // مانع (ماشین/دیوار و ...)
-        BUILDING,    // ساختمان
-        EMPTY;       // سلول خالی/نامشخص
+        ROAD,       // جاده قابل عبور
+        SIDEWALK,   // پیاده‌رو
+        GROUND,     // زمین خنثی
+        OBSTACLE,   // مانع مانند خودرو یا آوار
+        BUILDING,   // ساختمان‌ها / غیرقابل عبور
+        HOSPITAL,   // نقطه تحویل مجروح
+        EMPTY;      // سلول خالی یا تعریف‌نشده
 
-        /** آیا این نوع سلول قابل عبور است؟ */
+        /**
+         * آیا این نوع سلول قابل عبور است؟
+         *<p>
+         * در برخی کلاس‌ها نسخه‌های قدیمی متدی با نام {@code walkable()}
+         * فراخوانی می‌شد که وجود نداشت و باعث خطای کامپایل می‌گردید.
+         * برای سازگاری به عقب، هر دو نام {@link #isWalkable()} و
+         * {@link #walkable()} در دسترس هستند.
+         */
         public boolean isWalkable() {
-            return this == ROAD || this == HOSPITAL;
+            return this == ROAD || this == SIDEWALK || this == HOSPITAL;
+
         }
 
         /** سازگاری با کد قدیمی که به جای isWalkable از walkable استفاده می‌کرد. */
@@ -75,8 +82,10 @@ public class Cell {
     public Position getPosition() { return position; }
     public Type getType() { return type; }
 
+
     /** فقط ROAD و HOSPITAL قابل عبورند. */
     public boolean isWalkable() { return type.isWalkable(); }
+
 
     public boolean isOccupied() { return occupied; }
     public void setOccupied(boolean occupied) { this.occupied = occupied; }
