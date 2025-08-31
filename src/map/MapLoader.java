@@ -10,13 +10,15 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 
 /**
  * Loader ساده برای TMX (نقشه‌های Tiled).
  * - فقط لایه‌ی اول (CSV)
  * - tileset با یک <image>
  * - تعیین نوع Cell بر اساس property:
- *   - property name="type": road/hospital/building/obstacle/empty
+ *   - property name="type": road/sidewalk/ground/building/obstacle/hospital/empty
  *   - property name="walkable": true/false
  * - اگر walkable=true و type مشخص نبود → ROAD
  */
@@ -149,11 +151,10 @@ public final class MapLoader {
 
                 // نوع سلول از property ها
 
-                // اگر هیچ property تعریف نشده باشد، فرض را بر جادهٔ قابل عبور می‌گذاریم
-                Cell.Type type = Cell.Type.ROAD; // پیش‌فرض جدید
-                boolean walkable = true;
-
-
+                // پیش‌فرض: غیرقابل‌عبور تا زمانی که مشخص شود
+                Cell.Type type = Cell.Type.EMPTY;
+                boolean walkable = false;
+                Map<String, String> propMap = new HashMap<>();
 
                 int localId = gid - owner.firstGid;
                 Element tileElem = owner.findTileElement(localId);
@@ -165,8 +166,12 @@ public final class MapLoader {
                         String value = prop.getAttribute("value");
                         if (name == null) continue;
 
+                        propMap.put(name, value);
+
                         if (name.equalsIgnoreCase("type")) {
                             if ("road".equalsIgnoreCase(value))            type = Cell.Type.ROAD;
+                            else if ("sidewalk".equalsIgnoreCase(value))   type = Cell.Type.SIDEWALK;
+                            else if ("ground".equalsIgnoreCase(value))     type = Cell.Type.GROUND;
                             else if ("hospital".equalsIgnoreCase(value))   type = Cell.Type.HOSPITAL;
                             else if ("building".equalsIgnoreCase(value))   type = Cell.Type.BUILDING;
                             else if ("obstacle".equalsIgnoreCase(value)
@@ -174,20 +179,20 @@ public final class MapLoader {
                                     || "rubble".equalsIgnoreCase(value))     type = Cell.Type.OBSTACLE;
                             else if ("empty".equalsIgnoreCase(value))      type = Cell.Type.EMPTY;
                         } else if (name.equalsIgnoreCase("walkable")) {
-                            walkable = Boolean.parseBoolean(value);
+                            // Tiled ممکن است true/false یا 1/0 خروجی دهد
+                            walkable = "true".equalsIgnoreCase(value) || "1".equals(value);
                         }
                     }
                 }
+                cityMap.registerTileProperties(gid, propMap);
 
 
                 // هماهنگ‌سازی نوع سلول با وضعیت walkable
                 if (walkable && type == Cell.Type.EMPTY) {
                     type = Cell.Type.ROAD;
-                } else if (!walkable && type == Cell.Type.ROAD) {
-
-                // اگر مشخصاً غیرقابل عبور باشد ولی نوعی تعیین نشده، آن را مانع فرض کن
-                if (!walkable && (type == Cell.Type.ROAD || type == Cell.Type.EMPTY)) {
-
+                } else if (!walkable && (type == Cell.Type.ROAD || type == Cell.Type.SIDEWALK
+                        || type == Cell.Type.GROUND || type == Cell.Type.EMPTY)) {
+                    // اگر مشخصاً غیرقابل عبور باشد ولی نوعی تعیین نشده، آن را مانع فرض کن
                     type = Cell.Type.OBSTACLE;
                 }
 
@@ -200,6 +205,14 @@ public final class MapLoader {
         }
 
         return cityMap;
+    }
+
+    /**
+     * Backward-compatible alias for older callers expecting {@code loadMap}.
+     * Simply delegates to {@link #loadTMX(String)}.
+     */
+    public static CityMap loadMap(String tmxPath) throws Exception {
+        return loadTMX(tmxPath);
     }
 
     private static int parseIntOr(String s, int def) {
