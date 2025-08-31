@@ -2,6 +2,9 @@ package victim;
 
 import util.Position;
 import util.Timer;
+import util.AssetLoader;
+
+import java.awt.image.BufferedImage;
 
 // --------------------
 // لایه: Domain Layer
@@ -18,6 +21,10 @@ public class Injured {
     private boolean isDead;                    // آیا مرده؟
     private boolean beingRescued;              // آیا در حال نجات است؟
 
+    private BufferedImage sprite;              // تصویر نمایش مجروح
+
+    private static final String SPRITE_PATH = "assets/characters/injured.png";
+
     // سازنده
     public Injured(int id, Position position, InjurySeverity severity, int timeLimit) {
         this.id = id;
@@ -27,6 +34,7 @@ public class Injured {
         this.isRescued = false;
         this.isDead = false;
         this.beingRescued = false;
+        this.sprite = null;
     }
 
     // شناسه مجروح
@@ -80,5 +88,13 @@ public class Injured {
 
     public boolean canBeRescued() {
         return !isRescued && !isDead && !beingRescued && !rescueTimer.isFinished();
+    }
+
+    /** لود و برگرداندن اسپرایت مجروح. اگر موجود نباشد null برمی‌گرداند. */
+    public BufferedImage getSprite() {
+        if (sprite == null) {
+            sprite = AssetLoader.loadImage(SPRITE_PATH);
+        }
+        return sprite;
     }
 }

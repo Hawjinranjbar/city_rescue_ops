@@ -5,6 +5,8 @@ import util.CollisionMap;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 
 /**
  * --------------------
@@ -21,6 +23,7 @@ public class CityMap {
     private final int tileHeight;  // ارتفاع هر تایل (پیکسل)
     private final Cell[][] grid;   // grid[y][x]
     private CollisionMap collisionMap;   // نگاشت برخورد (اختیاری)
+    private final Map<Integer, Map<String, String>> tileProps = new HashMap<>();
 
     // --- سازنده‌ها ---
     public CityMap(int width, int height) {
@@ -58,6 +61,25 @@ public class CityMap {
     public Cell getCell(Position pos) {
         if (pos == null) return null;
         return getCell(pos.getX(), pos.getY());
+    }
+
+    /** ثبت خصوصیات یک تایل بر اساس GID. */
+    public void registerTileProperties(int gid, Map<String, String> props) {
+        if (props == null) return;
+        tileProps.putIfAbsent(gid, new HashMap<>(props));
+    }
+
+    /** گرفتن شناسهٔ تایل در مختصات مشخص. */
+    public int getTileId(int x, int y) {
+        Cell c = getCell(x, y);
+        return c != null ? c.getTileId() : -1;
+    }
+
+    /** گرفتن property یک تایل با GID و کلید. */
+    public String getTileProperty(int gid, String key) {
+        Map<String, String> p = tileProps.get(gid);
+        if (p == null) return null;
+        return p.get(key);
     }
 
     /** ست‌کردن وضعیت اشغال یک سلول، اگر معتبر باشد. */

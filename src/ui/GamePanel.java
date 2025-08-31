@@ -179,17 +179,24 @@ public class GamePanel extends JPanel {
             if (p.getX() < viewX || p.getX() >= viewX + viewWidth ||
                     p.getY() < viewY || p.getY() >= viewY + viewHeight) continue;
 
-            Color col;
-            InjurySeverity sev = inj.getSeverity();
-            if (sev == InjurySeverity.LOW) col = Color.YELLOW;
-            else if (sev == InjurySeverity.MEDIUM) col = Color.ORANGE;
-            else col = Color.RED; // CRITICAL
+            int dx = p.getX() * tileSize;
+            int dy = p.getY() * tileSize;
+            BufferedImage img = inj.getSprite();
+            if (img != null) {
+                g.drawImage(img, dx, dy, tileSize, tileSize, null);
+            } else {
+                Color col;
+                InjurySeverity sev = inj.getSeverity();
+                if (sev == InjurySeverity.LOW) col = Color.YELLOW;
+                else if (sev == InjurySeverity.MEDIUM) col = Color.ORANGE;
+                else col = Color.RED; // CRITICAL
 
-            g.setColor(col);
-            int r = tileSize / 2;
-            int cx = p.getX() * tileSize + (tileSize - r) / 2;
-            int cy = p.getY() * tileSize + (tileSize - r) / 2;
-            g.fillOval(cx, cy, r, r);
+                g.setColor(col);
+                int r = tileSize / 2;
+                int cx = dx + (tileSize - r) / 2;
+                int cy = dy + (tileSize - r) / 2;
+                g.fillOval(cx, cy, r, r);
+            }
         }
     }
 

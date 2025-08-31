@@ -6,6 +6,8 @@ import ui.GamePanel;
 import util.MoveGuard;
 import util.Position;
 import util.CollisionMap;
+import victim.Injured;
+import victim.InjurySeverity;
 
 import javax.swing.*;
 import java.awt.*;
@@ -13,6 +15,7 @@ import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 
 public class Main {
 
@@ -25,10 +28,9 @@ public class Main {
         SwingUtilities.invokeLater(new Runnable() {
             @Override public void run() {
                 try {
-                    // 1) Load map + collision
+                    // 1) Load map + collision directly from TMX properties
                     map = MapLoader.loadTMX("assets/maps/rescue_city.tmx");
-                    collisionMap = CollisionMap.fromMask("assets/maps/Road.png",
-                            map.getTileWidth(), map.getTileHeight());
+                    collisionMap = CollisionMap.fromTMX("assets/maps/rescue_city.tmx");
                     map.setCollisionMap(collisionMap);
 
                     // 2) Spawn rescuer at nearest road (bottom-right search)
@@ -39,11 +41,14 @@ public class Main {
                     if (startCell != null) startCell.setOccupied(true);
                     rescuers.add(r);
 
-                    // 3) Game panel
-                    gamePanel = new GamePanel(map, rescuers, new ArrayList<>()); // victims: empty for now
+                    // 3) Spawn victims at random walkable tiles
+                    List<Injured> victims = spawnVictims(map, collisionMap, 5);
+
+                    // 4) Game panel
+                    gamePanel = new GamePanel(map, rescuers, victims);
                     gamePanel.setFocusable(true);
 
-                    // 4) Keyboard control – movement only if MoveGuard allows (roads only)
+                    // 5) Keyboard control – movement only if MoveGuard allows (roads only)
                     gamePanel.addKeyListener(new KeyAdapter() {
                         @Override public void keyPressed(KeyEvent e) {
                             if (r == null || r.getPosition() == null) return;
@@ -77,7 +82,7 @@ public class Main {
                         }
                     });
 
-                    // 5) Frame
+                    // 6) Frame
                     JFrame frame = new JFrame("City Rescue Ops - Test");
                     frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
                     frame.setLayout(new BorderLayout());
@@ -99,6 +104,34 @@ public class Main {
                 }
             }
         });
+    }
+
+    /** تعدادی مجروح را روی تایل‌های قابل‌عبور و خالی به‌صورت تصادفی پخش می‌کند. */
+    private static List<Injured> spawnVictims(CityMap map, CollisionMap cm, int count) {
+        List<Injured> list = new ArrayList<>();
+        if (map == null) return list;
+
+        Random rnd = new Random();
+        int w = map.getWidth();
+        int h = map.getHeight();
+        int id = 1;
+        int attempts = 0;
+        while (id <= count && attempts < count * 20) {
+            int x = rnd.nextInt(w);
+            int y = rnd.nextInt(h);
+            Cell c = map.getCell(x, y);
+            boolean walk = (cm != null) ? cm.isWalkable(x, y) : (c != null && c.isWalkable());
+            boolean free = (c == null) || !c.isOccupied();
+            if (walk && free) {
+                InjurySeverity sev = InjurySeverity.values()[rnd.nextInt(InjurySeverity.values().length)];
+                Injured inj = new Injured(id, new Position(x, y), sev, 300);
+                list.add(inj);
+                if (c != null) c.setOccupied(true);
+                id++;
+            }
+            attempts++;
+        }
+        return list;
     }
 
     /** نزدیک‌ترین خانهٔ جاده از گوشهٔ پایین‌راست را برمی‌گرداند. */
