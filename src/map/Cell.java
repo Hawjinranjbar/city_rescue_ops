@@ -13,6 +13,7 @@ import java.awt.image.BufferedImage;
 public class Cell {
 
     public enum Type {
+
         ROAD,       // جاده قابل عبور
         SIDEWALK,   // پیاده‌رو
         GROUND,     // زمین خنثی
@@ -31,23 +32,34 @@ public class Cell {
          */
         public boolean isWalkable() {
             return this == ROAD || this == SIDEWALK || this == HOSPITAL;
+
         }
 
         /** سازگاری با کد قدیمی که به جای isWalkable از walkable استفاده می‌کرد. */
         public boolean walkable() {
             return isWalkable();
         }
+
+        /** true اگر این نوع مانع/غیرقابل عبور باشد. */
+        public boolean isBlocked() {
+            return !isWalkable();
+        }
+
+        /** true اگر این تایل بیمارستان باشد. */
+        public boolean isHospital() {
+            return this == HOSPITAL;
+        }
     }
 
-    private final Position position;     // موقعیت سلول در نقشه
-    private final Type type;             // نوع سلول
-    private boolean occupied;            // آیا کسی روی این سلول قرار دارد
+    private final Position position;  // موقعیت تایل در شبکه
+    private final Type type;          // نوع سلول
+    private boolean occupied;         // آیا عامل روی این تایل ایستاده است؟
 
     // ---- بخش گرافیک ----
-    private BufferedImage image;         // تصویر تایل
-    private int tileId;                  // شمارهٔ تایل در TMX (برای دیباگ)
+    private BufferedImage image;      // تصویر تایل
+    private int tileId;               // GID/شناسه تایل در TMX (برای دیباگ)
 
-    // سازندهٔ پایه (نوع مشخص + موقعیت)
+    // سازندهٔ پایه
     public Cell(Position position, Type type) {
         this(position, type, null, -1);
     }
@@ -55,13 +67,13 @@ public class Cell {
     // سازندهٔ کامل
     public Cell(Position position, Type type, BufferedImage image, int tileId) {
         this.position = position;
-        this.type = type != null ? type : Type.EMPTY;
-        this.occupied = false;
+        this.type = (type != null) ? type : Type.EMPTY;
         this.image = image;
         this.tileId = tileId;
+        this.occupied = false;
     }
 
-    // سازندهٔ ساده برای وقتی فقط تصویر داری
+    // سازندهٔ ساده وقتی فقط تصویر داری
     public Cell(Position position, BufferedImage image, int tileId) {
         this(position, Type.EMPTY, image, tileId);
     }
@@ -70,9 +82,9 @@ public class Cell {
     public Position getPosition() { return position; }
     public Type getType() { return type; }
 
-    public boolean isWalkable() {
-        return type.isWalkable();
-    }
+
+    /** فقط ROAD و HOSPITAL قابل عبورند. */
+    public boolean isWalkable() { return type.isWalkable(); }
 
 
     public boolean isOccupied() { return occupied; }
@@ -100,3 +112,4 @@ public class Cell {
                 '}';
     }
 }
+
