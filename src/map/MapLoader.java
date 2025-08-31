@@ -9,14 +9,13 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.HashMap;
-
 
 public final class MapLoader {
 
-    private MapLoader() { }
+    private MapLoader() {}
 
     /** 30 بیت پایین GID واقعی است (پرچم‌های flip حذف می‌شود). */
     private static final long GID_MASK = 0x0FFFFFFFL;
@@ -33,11 +32,14 @@ public final class MapLoader {
         BufferedImage image;
         Element tilesetElement;
 
-        boolean owns(int gid) { return gid >= firstGid && gid < firstGid + tileCount; }
+        boolean owns(int gid) {
+            return gid >= firstGid && gid < firstGid + tileCount;
+        }
 
         BufferedImage getSubImage(int gid) {
             int localId = gid - firstGid;
             if (localId < 0 || localId >= tileCount) return null;
+
             int col = localId % columns;
             int row = localId / columns;
             int x = margin + col * (tileWidth + spacing);
@@ -139,17 +141,10 @@ public final class MapLoader {
 
                 BufferedImage tileImage = owner.getSubImage(gid);
 
-
-                // نوع سلول از property ها
-
-                // پیش‌فرض: غیرقابل‌عبور تا زمانی که مشخص شود
-                Cell.Type type = Cell.Type.EMPTY;
+                // --- خواندن property ها ---
+                Cell.Type type = Cell.Type.EMPTY;       // پیش‌فرض: غیرقابل عبور
                 boolean walkable = false;
                 Map<String, String> propMap = new HashMap<>();
-                // --- نوع سلول از property ها ---
-                Cell.Type type = Cell.Type.EMPTY; // پیش‌فرض: غیرقابل عبور
-                boolean walkable = false;
- 
 
                 int localId = gid - owner.firstGid;
                 Element tileElem = owner.findTileElement(localId);
@@ -164,34 +159,41 @@ public final class MapLoader {
                         propMap.put(name, value);
 
                         if (name.equalsIgnoreCase("type")) {
-                            if ("road".equalsIgnoreCase(value))            type = Cell.Type.ROAD;
-                            else if ("sidewalk".equalsIgnoreCase(value))   type = Cell.Type.SIDEWALK;
-                            else if ("ground".equalsIgnoreCase(value))     type = Cell.Type.GROUND;
-                            else if ("hospital".equalsIgnoreCase(value))   type = Cell.Type.HOSPITAL;
-                                // هر نوع مانع → RUBBLE (با enum فعلی سازگار)
-                            else if ("rubble".equalsIgnoreCase(value)
-                                    || "building".equalsIgnoreCase(value)
-                                    || "obstacle".equalsIgnoreCase(value)
-                                    || "car".equalsIgnoreCase(value)
-                                    || "wall".equalsIgnoreCase(value))        type = Cell.Type.RUBBLE;
-                            else if ("empty".equalsIgnoreCase(value))      type = Cell.Type.EMPTY;
+                            if ("road".equalsIgnoreCase(value) ||
+                                    "sidewalk".equalsIgnoreCase(value) ||
+                                    "ground".equalsIgnoreCase(value)) {
+                                type = Cell.Type.ROAD;
+                            } else if ("hospital".equalsIgnoreCase(value) ||
+                                    "clinic".equalsIgnoreCase(value)) {
+                                type = Cell.Type.HOSPITAL;
+                            } else if ("building".equalsIgnoreCase(value)) {
+                                type = Cell.Type.BUILDING;
+                            } else if ("obstacle".equalsIgnoreCase(value) ||
+                                    "car".equalsIgnoreCase(value) ||
+                                    "wall".equalsIgnoreCase(value) ||
+                                    "rubble".equalsIgnoreCase(value) ||
+                                    "debris".equalsIgnoreCase(value)) {
+                                type = Cell.Type.OBSTACLE;
+                            } else if ("empty".equalsIgnoreCase(value)) {
+                                type = Cell.Type.EMPTY;
+                            }
                         } else if (name.equalsIgnoreCase("walkable")) {
-             walkable = "true".equalsIgnoreCase(value) || "1".equals(value);
+                            walkable = "true".equalsIgnoreCase(value) || "1".equals(value);
                         }
                     }
                 }
-                cityMap.registerTileProperties(gid, propMap);
 
-                // هماهنگ‌سازی نهایی با walkable
+                // اگر CityMap متد ثبت پراپرتی‌ها را داشت، ذخیره کن (اختیاری)
+                try { cityMap.getClass()
+                        .getMethod("registerTileProperties", int.class, Map.class)
+                        .invoke(cityMap, gid, propMap); }
+                catch (Throwable ignored) {}
+
+                // --- هماهنگ‌سازی نهایی با walkable ---
                 if (walkable && type == Cell.Type.EMPTY) {
                     type = Cell.Type.ROAD;
-
-                } else if (!walkable && (type == Cell.Type.ROAD || type == Cell.Type.SIDEWALK
-                        || type == Cell.Type.GROUND || type == Cell.Type.EMPTY)) {
-                    // اگر مشخصاً غیرقابل عبور باشد ولی نوعی تعیین نشده، آن را مانع فرض کن
-                    type = Cell.Type.OBSTACLE;
                 } else if (!walkable && (type == Cell.Type.ROAD || type == Cell.Type.EMPTY)) {
-                    type = Cell.Type.RUBBLE;
+                    type = Cell.Type.OBSTACLE;
                 }
 
                 Cell cell = new Cell(new Position(x, y), type, tileImage, gid);
@@ -202,7 +204,7 @@ public final class MapLoader {
         return cityMap;
     }
 
-
+    /** سازگاری با نسخه‌های قدیمی‌تر. */
     public static CityMap loadMap(String tmxPath) throws Exception {
         return loadTMX(tmxPath);
     }
