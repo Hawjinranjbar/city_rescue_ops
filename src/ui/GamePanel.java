@@ -4,6 +4,7 @@ package ui;
 import agent.Rescuer;
 import map.Cell;
 import map.CityMap;
+import util.AssetLoader;
 import util.Position;
 import victim.Injured;
 import victim.InjurySeverity;
@@ -13,7 +14,9 @@ import java.awt.*;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.awt.image.BufferedImage;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * --------------------
@@ -28,6 +31,7 @@ public class GamePanel extends JPanel {
     private CityMap cityMap;
     private List<Rescuer> rescuers;
     private List<Injured> victims;
+    private final Map<InjurySeverity, BufferedImage> victimSprites = new EnumMap<>(InjurySeverity.class);
 
     // ---- تنظیمات نمایش ----
     private int tileSize = 32;             // اندازه‌ی رسم هر تایل روی صفحه
@@ -69,12 +73,23 @@ public class GamePanel extends JPanel {
         requestFocusInWindow();
         setDoubleBuffered(true);
 
+        loadVictimSprites();
+
         addComponentListener(new ComponentAdapter() {
             @Override
             public void componentResized(ComponentEvent e) {
                 updateViewportSize();
             }
         });
+    }
+
+    private void loadVictimSprites() {
+        victimSprites.put(InjurySeverity.LOW,
+                AssetLoader.loadScaled("assets/characters/LOW.png", tileSize, tileSize));
+        victimSprites.put(InjurySeverity.MEDIUM,
+                AssetLoader.loadScaled("assets/characters/MEDIUM.png", tileSize, tileSize));
+        victimSprites.put(InjurySeverity.CRITICAL,
+                AssetLoader.loadScaled("assets/characters/CRITICAL.png", tileSize, tileSize));
     }
 
     // ---------------------- رندر اصلی ----------------------
@@ -179,17 +194,24 @@ public class GamePanel extends JPanel {
             if (p.getX() < viewX || p.getX() >= viewX + viewWidth ||
                     p.getY() < viewY || p.getY() >= viewY + viewHeight) continue;
 
-            Color col;
-            InjurySeverity sev = inj.getSeverity();
-            if (sev == InjurySeverity.LOW) col = Color.YELLOW;
-            else if (sev == InjurySeverity.MEDIUM) col = Color.ORANGE;
-            else col = Color.RED; // CRITICAL
+            BufferedImage sprite = victimSprites.get(inj.getSeverity());
+            if (sprite != null) {
+                int drawX = p.getX() * tileSize + (tileSize - sprite.getWidth()) / 2;
+                int drawY = p.getY() * tileSize + (tileSize - sprite.getHeight());
+                g.drawImage(sprite, drawX, drawY, null);
+            } else {
+                Color col;
+                InjurySeverity sev = inj.getSeverity();
+                if (sev == InjurySeverity.LOW) col = Color.YELLOW;
+                else if (sev == InjurySeverity.MEDIUM) col = Color.ORANGE;
+                else col = Color.RED; // CRITICAL
 
-            g.setColor(col);
-            int r = tileSize / 2;
-            int cx = p.getX() * tileSize + (tileSize - r) / 2;
-            int cy = p.getY() * tileSize + (tileSize - r) / 2;
-            g.fillOval(cx, cy, r, r);
+                g.setColor(col);
+                int r = tileSize / 2;
+                int cx = p.getX() * tileSize + (tileSize - r) / 2;
+                int cy = p.getY() * tileSize + (tileSize - r) / 2;
+                g.fillOval(cx, cy, r, r);
+            }
         }
     }
 
@@ -274,6 +296,7 @@ public class GamePanel extends JPanel {
             setPreferredSize(new Dimension(viewWidth * tileSize,
                     viewHeight * tileSize));
         }
+        loadVictimSprites();
         revalidate();
         repaint();
     }
