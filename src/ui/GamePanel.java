@@ -84,12 +84,23 @@ public class GamePanel extends JPanel {
     }
 
     private void loadVictimSprites() {
+
+        victimSprites.clear();
+        for (InjurySeverity sev : InjurySeverity.values()) {
+            String path = "assets/characters/" + sev.name() + ".png";
+            BufferedImage img = AssetLoader.loadScaled(path, tileSize, tileSize);
+            if (img != null) {
+                victimSprites.put(sev, img);
+            }
+        }
+
         victimSprites.put(InjurySeverity.LOW,
                 AssetLoader.loadScaled("assets/characters/LOW.png", tileSize, tileSize));
         victimSprites.put(InjurySeverity.MEDIUM,
                 AssetLoader.loadScaled("assets/characters/MEDIUM.png", tileSize, tileSize));
         victimSprites.put(InjurySeverity.CRITICAL,
                 AssetLoader.loadScaled("assets/characters/CRITICAL.png", tileSize, tileSize));
+
     }
 
     // ---------------------- رندر اصلی ----------------------
