@@ -8,6 +8,11 @@ import map.CityMap;
 /**
  * MoveGuard: بررسی و اعمال حرکت روی شبکهٔ تایل.
  * جهت‌ها: 0=DOWN, 1=LEFT, 2=RIGHT, 3=UP
+ *
+ * سیاست عبور:
+ * - فقط اگر نوع سلول مقصد قابل‌عبور باشد (ROAD/SIDEWALK) و در CollisionMap هم قابل‌عبور باشد، حرکت انجام می‌شود.
+ * - بیمارستان (HOSPITAL) و موانع (OBSTACLE/BUILDING) کاملاً بلاک هستند.
+ * - به علاوه، اگر سلول مقصد occupied باشد، حرکت انجام نمی‌شود.
  */
 public final class MoveGuard {
 
@@ -26,20 +31,26 @@ public final class MoveGuard {
         // حتی اگر حرکت نکند، جهت را تنظیم کن
         safeSetDir(rescuer, dir);
 
+        // محدودهٔ نقشه
         if (!map.isValid(nx, ny)) return false;
 
+        // بررسی سلول مقصد
         Cell dest = map.getCell(nx, ny);
-        if (dest == null || dest.isOccupied()) return false;
+        if (dest == null) return false;
+        if (dest.isOccupied()) return false;
 
-        boolean pass = (collisionMap != null)
-                ? collisionMap.isWalkable(nx, ny)
-                : map.isWalkable(nx, ny);
-        if (!pass) return false;
+        // بیمارستان به‌طور صریح بلاک است (علاوه بر isWalkable=false)
+        if (dest.isHospital()) return false;
+
+        // شرط نوع سلول (ROAD/SIDEWALK) + شرط CollisionMap (در صورت وجود)
+        boolean passByType = dest.isWalkable();  // الان HOSPITAL و موانع عبوری نیستند
+        boolean passByCollision = (collisionMap == null) || collisionMap.isWalkable(nx, ny);
+        if (!passByType || !passByCollision) return false;
 
         // آزاد کردن قبلی
         map.setOccupied(cur.getX(), cur.getY(), false);
 
-        // جابه‌جایی + انیمیشن
+        // جابه‌جایی + انیمیشن/فریم
         safeMove(rescuer, nx, ny, dir);
 
         // اشغال جدید
@@ -47,7 +58,7 @@ public final class MoveGuard {
         return true;
     }
 
-    /** حرکت Vehicle با قید برخورد/اشغال. */
+    /** حرکت Vehicle با قید برخورد/اشغال (اگر بعداً وسیله‌ای داشته باشی). */
     public static boolean tryMoveToVehicle(CityMap map,
                                            CollisionMap vehicleCM, // می‌تواند null باشد
                                            Vehicle vehicle,
@@ -57,11 +68,15 @@ public final class MoveGuard {
         if (cur == null) return false;
 
         if (!map.isValid(nx, ny)) return false;
-        Cell dest = map.getCell(nx, ny);
-        if (dest == null || dest.isOccupied()) return false;
 
-        boolean pass = (vehicleCM != null) ? vehicleCM.isWalkable(nx, ny) : map.isWalkable(nx, ny);
-        if (!pass) return false;
+        Cell dest = map.getCell(nx, ny);
+        if (dest == null) return false;
+        if (dest.isOccupied()) return false;
+        if (dest.isHospital()) return false;
+
+        boolean passByType = dest.isWalkable();
+        boolean passByCollision = (vehicleCM == null) || vehicleCM.isWalkable(nx, ny);
+        if (!passByType || !passByCollision) return false;
 
         // آزاد کردن قبلی
         map.setOccupied(cur.getX(), cur.getY(), false);
@@ -69,9 +84,11 @@ public final class MoveGuard {
         // حرکت
         vehicle.move(nx - cur.getX(), ny - cur.getY());
 
-        // اشغال جدید
+        // اشغال جدید (پس از حرکت مختصات جدید را دوباره بگیر)
         Position after = vehicle.getTile();
-        if (after != null) map.setOccupied(after.getX(), after.getY(), true);
+        if (after != null) {
+            map.setOccupied(after.getX(), after.getY(), true);
+        }
 
         return true;
     }
@@ -87,12 +104,16 @@ public final class MoveGuard {
             safeNext(r);
         } catch (Throwable ignored) {}
     }
+
     private static void safeSetDir(Rescuer r, int dir) {
-        try { r.getClass().getMethod("setDirection", int.class).invoke(r, dir); }
-        catch (Throwable ignored) {}
+        try {
+            r.getClass().getMethod("setDirection", int.class).invoke(r, dir);
+        } catch (Throwable ignored) {}
     }
+
     private static void safeNext(Rescuer r) {
-        try { r.getClass().getMethod("nextFrame").invoke(r); }
-        catch (Throwable ignored) {}
+        try {
+            r.getClass().getMethod("nextFrame").invoke(r);
+        } catch (Throwable ignored) {}
     }
 }

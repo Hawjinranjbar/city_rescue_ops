@@ -1,4 +1,3 @@
-// ui/GamePanel.java
 package ui;
 
 import agent.Rescuer;
@@ -19,30 +18,27 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * پنل رندر بازی: فقط نقشه، نجات‌دهنده‌ها و مجروح‌ها.
- * ــ بدون Vehicle ــ
+ * پنل رندر بازی: نقشه، نجات‌دهنده‌ها و مجروح‌ها (بدون Vehicle).
+ * با HUD تایمر بالای سر مجروح‌ها.
  */
 public class GamePanel extends JPanel {
 
-    // ---- داده‌ها ----
     private CityMap cityMap;
     private List<Rescuer> rescuers;
     private List<Injured> victims;
     private final Map<InjurySeverity, BufferedImage> victimSprites =
             new EnumMap<InjurySeverity, BufferedImage>(InjurySeverity.class);
 
-    // ---- تنظیمات نمایش ----
     private int tileSize = 32;
     private boolean drawGrid = false;
     private double rescuerScale = 2.0;
     private double victimScale  = 3.0;
     private boolean debugWalkable = false;
+    private boolean showVictimTimers = true;
 
-    // Alignment برای Victim
     private int victimXOffset = 0;
     private int victimYOffset = 0;
 
-    // ---- Viewport ----
     private int viewX = 0, viewY = 0;
     private int viewWidth = 1, viewHeight = 1;
 
@@ -74,7 +70,6 @@ public class GamePanel extends JPanel {
         });
     }
 
-    /** لود اسپرایت مجروح‌ها (PNG شفاف) با اسکیل ثابت؛ بدون Vehicle. */
     private void loadVictimSprites() {
         int w = (int) Math.round(tileSize * victimScale);
         int h = w;
@@ -100,13 +95,15 @@ public class GamePanel extends JPanel {
         updateViewport();
 
         Graphics2D gWorld = (Graphics2D) g.create();
+        gWorld.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+        gWorld.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
+
         gWorld.translate(-viewX * tileSize, -viewY * tileSize);
 
         drawMap(gWorld);
+        if (debugWalkable) drawWalkableOverlay(gWorld);
         drawVictims(gWorld);
         drawRescuers(gWorld);
-
-        if (debugWalkable) drawWalkableOverlay(gWorld);
         if (drawGrid) drawGridLines(gWorld);
 
         gWorld.dispose();
@@ -168,14 +165,15 @@ public class GamePanel extends JPanel {
                     p.getY() < viewY || p.getY() >= viewY + viewHeight) continue;
 
             BufferedImage sprite = victimSprites.get(inj.getSeverity());
+            int baseX = p.getX() * tileSize;
+            int baseY = p.getY() * tileSize;
+
             if (sprite != null) {
-                int baseX = p.getX() * tileSize;
-                int baseY = p.getY() * tileSize;
                 int drawX = baseX + (tileSize - sprite.getWidth()) / 2 + victimXOffset;
                 int drawY = baseY + (tileSize - sprite.getHeight()) + victimYOffset;
                 g.drawImage(sprite, drawX, drawY, null);
+                if (showVictimTimers) drawVictimTimerHUD((Graphics2D) g, inj, baseX, baseY, sprite.getWidth());
             } else {
-                // fallback رنگی
                 Color col = Color.RED;
                 switch (inj.getSeverity()) {
                     case LOW: col = Color.YELLOW; break;
@@ -184,11 +182,51 @@ public class GamePanel extends JPanel {
                 }
                 g.setColor(col);
                 int r = tileSize / 2;
-                int cx = p.getX() * tileSize + (tileSize - r) / 2 + victimXOffset;
-                int cy = p.getY() * tileSize + (tileSize - r) / 2 + victimYOffset;
+                int cx = baseX + (tileSize - r) / 2 + victimXOffset;
+                int cy = baseY + (tileSize - r) / 2 + victimYOffset;
                 g.fillOval(cx, cy, r, r);
+                if (showVictimTimers) drawVictimTimerHUD((Graphics2D) g, inj, baseX, baseY, r);
             }
         }
+    }
+
+    private void drawVictimTimerHUD(Graphics2D g2, Injured inj, int baseX, int baseY, int spriteW) {
+        int barWidth = (int) (tileSize * 0.9);
+        int barHeight = Math.max(6, (int) (tileSize * 0.18));
+        int x = baseX + (tileSize - barWidth) / 2;
+        int y = baseY - 6;
+
+        g2.setColor(new Color(0, 0, 0, 140));
+        g2.fillRoundRect(x, y - barHeight, barWidth, barHeight, 6, 6);
+
+        float pct = inj.getTimePercent();
+        pct = Math.max(0f, Math.min(1f, pct));
+        int filled = (int) (barWidth * pct);
+
+        Color fill;
+        if (pct > 0.6f) fill = new Color(50, 205, 50);
+        else if (pct > 0.3f) fill = new Color(255, 193, 7);
+        else fill = new Color(220, 53, 69);
+
+        g2.setColor(fill);
+        g2.fillRoundRect(x+1, y - barHeight + 1, Math.max(0, filled - 2), barHeight - 2, 6, 6);
+
+        // ✅ فونت بزرگ‌تر
+        String txt = String.valueOf(Math.max(0, inj.getRemainingTime()));
+        Font old = g2.getFont();
+        Font f = old.deriveFont(Font.BOLD, Math.max(14f, tileSize * 0.6f));
+        g2.setFont(f);
+
+        FontMetrics fm = g2.getFontMetrics();
+        int tw = fm.stringWidth(txt);
+        int th = fm.getAscent();
+
+        g2.setColor(new Color(0, 0, 0, 180));
+        g2.drawString(txt, x + (barWidth - tw) / 2 + 1, y - barHeight/2 + th/2);
+        g2.setColor(Color.WHITE);
+        g2.drawString(txt, x + (barWidth - tw) / 2,     y - barHeight/2 + th/2);
+
+        g2.setFont(old);
     }
 
     private void drawRescuers(Graphics2D g2) {
@@ -209,8 +247,9 @@ public class GamePanel extends JPanel {
             int drawX = baseX + (tileSize - size) / 2;
             int drawY = baseY + (tileSize - size);
 
-            if (sprite != null) g2.drawImage(sprite, drawX, drawY, size, size, null);
-            else {
+            if (sprite != null) {
+                g2.drawImage(sprite, drawX, drawY, size, size, null);
+            } else {
                 g2.setColor(new Color(0, 70, 200));
                 g2.fillRect(drawX, drawY, size, size);
             }
@@ -219,7 +258,7 @@ public class GamePanel extends JPanel {
 
     private void drawWalkableOverlay(Graphics g) {
         Graphics2D gg = (Graphics2D) g.create();
-        gg.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.25f));
+        gg.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.22f));
         int startY = viewY, endY = Math.min(cityMap.getHeight(), viewY + viewHeight);
         int startX = viewX, endX = Math.min(cityMap.getWidth(), viewX + viewWidth);
         for (int y = startY; y < endY; y++) {
@@ -271,6 +310,7 @@ public class GamePanel extends JPanel {
     public void setVictimOffset(int xOffset, int yOffset) { this.victimXOffset = xOffset; this.victimYOffset = yOffset; repaint(); }
     public void setDebugWalkable(boolean on) { this.debugWalkable = on; repaint(); }
     public void setDrawGrid(boolean drawGrid) { this.drawGrid = drawGrid; repaint(); }
+    public void setShowVictimTimers(boolean on) { this.showVictimTimers = on; repaint(); }
     public void setMap(CityMap cityMap) { this.cityMap = cityMap; updateViewport(); revalidate(); repaint(); }
     public void setRescuers(List<Rescuer> rescuers) { this.rescuers = rescuers; updateViewport(); repaint(); }
     public void setVictims(List<Injured> victims) { this.victims = victims; repaint(); }

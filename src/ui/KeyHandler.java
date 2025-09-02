@@ -66,16 +66,30 @@ public class KeyHandler extends KeyAdapter {
         if (controlVehicle && vehicle != null) {
             Position t = vehicle.getTile();
             if (t != null) {
-                int nx = t.getX(), ny = t.getY();
+                int nx = t.getX();
+                int ny = t.getY();
                 switch (code) {
-                    case KeyEvent.VK_W: ny--; break;
-                    case KeyEvent.VK_S: ny++; break;
-                    case KeyEvent.VK_A: nx--; break;
-                    case KeyEvent.VK_D: nx++; break;
+                    case KeyEvent.VK_W:
+                        ny--;
+                        break;
+                    case KeyEvent.VK_S:
+                        ny++;
+                        break;
+                    case KeyEvent.VK_A:
+                        nx--;
+                        break;
+                    case KeyEvent.VK_D:
+                        nx++;
+                        break;
+                    default:
+                        break;
                 }
                 if (nx != t.getX() || ny != t.getY()) {
                     moved = tryMoveVehicle(nx, ny);
-                    if (moved && panel != null) { panel.repaint(); return; }
+                    if (moved && panel != null) {
+                        panel.repaint();
+                        return;
+                    }
                 }
             }
         }
@@ -85,12 +99,14 @@ public class KeyHandler extends KeyAdapter {
         Position p = currentRescuer.getPosition();
         if (p == null) return;
 
-        int x = p.getX(), y = p.getY();
+        int x = p.getX();
+        int y = p.getY();
 
         switch (code) {
             case KeyEvent.VK_TAB:
                 if (decisionInterface != null) {
                     currentRescuer = decisionInterface.switchToNextRescuer(currentRescuer, allRescuers);
+                    if (panel != null) panel.repaint();
                 }
                 break;
 
@@ -114,35 +130,54 @@ public class KeyHandler extends KeyAdapter {
 
             // اگر کنترل خودرو خاموش باشد، WASD هم برای Rescuer کار کند
             case KeyEvent.VK_W:
-                if (!controlVehicle)
+                if (!controlVehicle) {
                     moved = util.MoveGuard.tryMoveTo(map, collisionMap, currentRescuer, x, y - 1, 3);
+                }
                 break;
             case KeyEvent.VK_S:
-                if (!controlVehicle)
+                if (!controlVehicle) {
                     moved = util.MoveGuard.tryMoveTo(map, collisionMap, currentRescuer, x, y + 1, 0);
+                }
                 break;
             case KeyEvent.VK_A:
-                if (!controlVehicle)
+                if (!controlVehicle) {
                     moved = util.MoveGuard.tryMoveTo(map, collisionMap, currentRescuer, x - 1, y, 1);
+                }
                 break;
             case KeyEvent.VK_D:
-                if (!controlVehicle)
+                if (!controlVehicle) {
                     moved = util.MoveGuard.tryMoveTo(map, collisionMap, currentRescuer, x + 1, y, 2);
+                }
+                break;
+            default:
                 break;
         }
 
         if (moved && panel != null) panel.repaint();
     }
 
+    /**
+     * حرکت Vehicle با قید نوع سلول + CollisionMap + occupied.
+     * بیمارستان و موانع صراحتاً بلاک‌اند.
+     */
     private boolean tryMoveVehicle(int nx, int ny) {
         if (!map.isValid(nx, ny)) return false;
         Cell dest = map.getCell(nx, ny);
-        if (dest == null || dest.isOccupied()) return false;
+        if (dest == null) return false;
+        if (dest.isOccupied()) return false;
 
-        // محدودیت: فقط جاده (در صورت نیاز HOSPITAL را اضافه کن)
-        if (!(dest.getType() == Cell.Type.ROAD /* || dest.getType() == Cell.Type.HOSPITAL */)) {
-            return false;
-        }
+        // بلاک صریح بیمارستان
+        if (dest.isHospital()) return false;
+
+        // عبوری‌بودن بر اساس نوع سلول (فقط Road/Sidewalk)
+        boolean passByType = dest.isWalkable(); // HOSPITAL/OBSTACLE/BUILDING عبوری نیستند
+
+        // عبوری‌بودن بر اساس CollisionMap (در صورت وجود)
+        boolean passByCollision = (vehicleCollision == null) || vehicleCollision.isWalkable(nx, ny);
+
+        if (!passByType || !passByCollision) return false;
+
+        // واگذاری حرکت نهایی به MoveGuard (اشغال قبلی/جدید هم آن‌جا مدیریت می‌شود)
         return util.MoveGuard.tryMoveToVehicle(map, vehicleCollision, vehicle, nx, ny);
     }
 

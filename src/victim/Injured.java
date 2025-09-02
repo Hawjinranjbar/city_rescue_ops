@@ -3,22 +3,31 @@ package victim;
 import util.Position;
 import util.Timer;
 
-// --------------------
-// لایه: Domain Layer
-// --------------------
-// این کلاس نمایندهٔ یک مجروح توی نقشه‌ست
-// شامل موقعیت، شدت جراحت، تایمر نجات و وضعیت نجات/مرگ
+/**
+ * --------------------
+ * لایه: Domain Layer
+ * --------------------
+ * نمایندهٔ یک مجروح روی نقشه:
+ * - موقعیت، شدت جراحت، تایمر نجات
+ * - وضعیت‌ها: نجات‌شده / مرده / در حال نجات
+ */
 public class Injured {
 
-    private final int id;                      // شناسه یکتا برای هر مجروح
-    private final Position position;           // موقعیت مجروح روی نقشه
-    private final InjurySeverity severity;     // شدت جراحت (LOW, MEDIUM, CRITICAL)
-    private final Timer rescueTimer;           // تایمر باقی‌مانده برای نجات
-    private boolean isRescued;                 // آیا نجات داده شده؟
-    private boolean isDead;                    // آیا مرده؟
-    private boolean beingRescued;              // آیا در حال نجات است؟
+    // زمان‌های پیش‌فرض بر حسب ثانیه (یا واحد تیک)
+    private static final int TIME_LOW_DEFAULT      = 180;
+    private static final int TIME_MEDIUM_DEFAULT   = 120;
+    private static final int TIME_CRITICAL_DEFAULT = 60;
 
-    // سازنده
+    private final int id;                 // شناسه یکتا
+    private final Position position;      // مختصات روی نقشه
+    private final InjurySeverity severity;// شدت جراحت
+    private final Timer rescueTimer;      // تایمر فرصت نجات
+
+    private boolean isRescued;            // آیا نجات داده شده؟
+    private boolean isDead;               // آیا مرده؟
+    private boolean beingRescued;         // آیا در حال عملیات نجات است؟
+
+    // --- سازنده با زمان مشخص ---
     public Injured(int id, Position position, InjurySeverity severity, int timeLimit) {
         this.id = id;
         this.position = position;
@@ -29,55 +38,74 @@ public class Injured {
         this.beingRescued = false;
     }
 
-    // شناسه مجروح
-    public int getId() {
-        return id;
+    // --- سازنده با زمان پیش‌فرض بر اساس شدت ---
+    public Injured(int id, Position position, InjurySeverity severity) {
+        this(id, position, severity, defaultTimeFor(severity));
     }
 
-    // گرفتن موقعیت
-    public Position getPosition() {
-        return position;
+    private static int defaultTimeFor(InjurySeverity sev) {
+        if (sev == InjurySeverity.CRITICAL) return TIME_CRITICAL_DEFAULT;
+        if (sev == InjurySeverity.MEDIUM)   return TIME_MEDIUM_DEFAULT;
+        return TIME_LOW_DEFAULT;
     }
 
-    // شدت جراحت
-    public InjurySeverity getSeverity() {
-        return severity;
+    // ===================== تایمر =====================
+    /** کاهش یک تیک از تایمر */
+    public void tick() {
+        if (isRescued || isDead) return;
+        rescueTimer.tick();
     }
 
-    // گرفتن تایمر
-    public Timer getRescueTimer() {
-        return rescueTimer;
+    /** اگر زمان تمام شد و نجات داده نشده بود، او را مرده می‌کند. */
+    public boolean updateAndCheckDeath() {
+        if (isRescued || isDead) return false;
+        rescueTimer.tick();
+        if (rescueTimer.isFinished()) {
+            markAsDead();
+            return true;
+        }
+        return false;
     }
 
-    // چک نجات
-    public boolean isRescued() {
-        return isRescued;
+    // ===================== Getter ها =====================
+    public int getId() { return id; }
+    public Position getPosition() { return position; }
+    public InjurySeverity getSeverity() { return severity; }
+    public Timer getRescueTimer() { return rescueTimer; }
+
+    public int getRemainingTime() { return rescueTimer.getRemainingTime(); }
+
+    public float getTimePercent() {
+        int rem = rescueTimer.getRemainingTime();
+        int total = defaultTimeFor(severity);
+        if (total <= 0) return 0f;
+        if (rem <= 0) return 0f;
+        if (rem >= total) return 1f;
+        return (float) rem / (float) total;
     }
 
-    // چک مرگ
-    public boolean isDead() {
-        return isDead;
-    }
+    // ===================== وضعیت‌ها =====================
+    public boolean isRescued() { return isRescued; }
+    public boolean isDead() { return isDead; }
+    public boolean isBeingRescued() { return beingRescued; }
+    public void setBeingRescued(boolean beingRescued) { this.beingRescued = beingRescued; }
 
-    // مارک کردن به‌عنوان نجات‌یافته
     public void markAsRescued() {
+        if (isDead) return;
         isRescued = true;
         beingRescued = false;
         rescueTimer.stop();
     }
 
-    // مارک کردن به‌عنوان مرده
     public void markAsDead() {
+        if (isRescued) return;
         isDead = true;
         beingRescued = false;
         rescueTimer.stop();
     }
 
-    // بررسی اینکه نجات ممکنه یا نه
-    public boolean isBeingRescued() { return beingRescued; }
-
-    public void setBeingRescued(boolean beingRescued) { this.beingRescued = beingRescued; }
-
+    // ===================== منطق انتخاب =====================
+    /** آیا این مجروح هنوز قابل نجات است؟ */
     public boolean canBeRescued() {
         return !isRescued && !isDead && !beingRescued && !rescueTimer.isFinished();
     }

@@ -32,14 +32,11 @@ public final class MapLoader {
         BufferedImage image;
         Element tilesetElement;
 
-        boolean owns(int gid) {
-            return gid >= firstGid && gid < firstGid + tileCount;
-        }
+        boolean owns(int gid) { return gid >= firstGid && gid < firstGid + tileCount; }
 
         BufferedImage getSubImage(int gid) {
             int localId = gid - firstGid;
             if (localId < 0 || localId >= tileCount) return null;
-
             int col = localId % columns;
             int row = localId / columns;
             int x = margin + col * (tileWidth + spacing);
@@ -74,7 +71,7 @@ public final class MapLoader {
 
         // ---- tileset ها ----
         NodeList tsNodes = mapElem.getElementsByTagName("tileset");
-        List<TilesetInfo> tilesets = new ArrayList<>();
+        List<TilesetInfo> tilesets = new ArrayList<TilesetInfo>();
 
         for (int i = 0; i < tsNodes.getLength(); i++) {
             Element ts = (Element) tsNodes.item(i);
@@ -135,7 +132,8 @@ public final class MapLoader {
 
                 // tileset مالک
                 TilesetInfo owner = null;
-                for (TilesetInfo ts : tilesets) {
+                for (int i = 0; i < tilesets.size(); i++) {
+                    TilesetInfo ts = tilesets.get(i);
                     if (ts.owns(gid)) { owner = ts; break; }
                 }
                 if (owner == null) continue;
@@ -143,12 +141,23 @@ public final class MapLoader {
                 BufferedImage tileImage = owner.getSubImage(gid);
 
                 // --- خواندن property ها ---
-                Cell.Type type = Cell.Type.EMPTY;       // پیش‌فرض: غیرقابل عبور
+                // پیش‌فرض امن: زمین خنثی (غیرقابل عبور)
+                Cell.Type type = Cell.Type.GROUND;
                 boolean walkable = false;
-                Map<String, String> propMap = new HashMap<>();
+                Map<String, String> propMap = new HashMap<String,String>();
 
                 int localId = gid - owner.firstGid;
                 Element tileElem = owner.findTileElement(localId);
+
+                // 1) اگر خود <tile> attribute type داشته باشد
+                if (tileElem != null) {
+                    String tileAttrType = tileElem.getAttribute("type");
+                    if (tileAttrType != null && tileAttrType.length() > 0) {
+                        type = resolveType(tileAttrType);
+                    }
+                }
+
+                // 2) properties
                 if (tileElem != null) {
                     NodeList props = tileElem.getElementsByTagName("property");
                     for (int pi = 0; pi < props.getLength(); pi++) {
@@ -159,26 +168,9 @@ public final class MapLoader {
 
                         propMap.put(name, value);
 
-                        if (name.equalsIgnoreCase("type")) {
-                            if ("road".equalsIgnoreCase(value) ||
-                                    "sidewalk".equalsIgnoreCase(value) ||
-                                    "ground".equalsIgnoreCase(value)) {
-                                type = Cell.Type.ROAD;
-                            } else if ("hospital".equalsIgnoreCase(value) ||
-                                    "clinic".equalsIgnoreCase(value)) {
-                                type = Cell.Type.HOSPITAL;
-                            } else if ("building".equalsIgnoreCase(value)) {
-                                type = Cell.Type.BUILDING;
-                            } else if ("obstacle".equalsIgnoreCase(value) ||
-                                    "car".equalsIgnoreCase(value) ||
-                                    "wall".equalsIgnoreCase(value) ||
-                                    "rubble".equalsIgnoreCase(value) ||
-                                    "debris".equalsIgnoreCase(value)) {
-                                type = Cell.Type.OBSTACLE;
-                            } else if ("empty".equalsIgnoreCase(value)) {
-                                type = Cell.Type.EMPTY;
-                            }
-                        } else if (name.equalsIgnoreCase("walkable")) {
+                        if (equalsIgnoreCase(name, "type") || equalsIgnoreCase(name, "category")) {
+                            type = resolveType(value);
+                        } else if (equalsIgnoreCase(name, "walkable")) {
                             walkable = "true".equalsIgnoreCase(value) || "1".equals(value);
                         }
                     }
@@ -188,14 +180,16 @@ public final class MapLoader {
                 try {
                     cityMap.getClass()
                             .getMethod("registerTileProperties", int.class, Map.class)
-                            .invoke(cityMap, gid, propMap);
+                            .invoke(cityMap, Integer.valueOf(gid), propMap);
                 } catch (Throwable ignored) {}
 
                 // --- هماهنگ‌سازی نهایی با walkable ---
-                if (walkable && type == Cell.Type.EMPTY) {
-                    type = Cell.Type.ROAD;
-                } else if (!walkable && (type == Cell.Type.ROAD || type == Cell.Type.EMPTY)) {
-                    type = Cell.Type.OBSTACLE;
+                // فقط اگر نوع ناشناخته/زمین بود و walkable=true → SIDEWALK
+                if (walkable) {
+                    if (type == Cell.Type.GROUND || type == Cell.Type.EMPTY) {
+                        type = Cell.Type.SIDEWALK;
+                    }
+                    // توجه: اگر type قبلاً ROAD/SIDEWALK/HOSPITAL/... شده، دست نمی‌زنیم
                 }
 
                 Cell cell = new Cell(new Position(x, y), type, tileImage, gid);
@@ -250,7 +244,7 @@ public final class MapLoader {
 
     /** همهٔ آبجکت‌هایی که type مشخص دارند را (در یک objectgroup خاص) برمی‌گرداند. */
     public static List<Position> findObjectsByType(String tmxPath, String groupName, String type) {
-        List<Position> out = new ArrayList<>();
+        List<Position> out = new ArrayList<Position>();
         try {
             Document doc = parseXML(tmxPath);
             Element map = (Element) doc.getElementsByTagName("map").item(0);
@@ -291,5 +285,46 @@ public final class MapLoader {
     private static int parseIntOr(String s, int def) {
         try { return Integer.parseInt(s); }
         catch (Exception e) { return def; }
+    }
+
+    private static boolean equalsIgnoreCase(String a, String b) {
+        return a != null && b != null && a.equalsIgnoreCase(b);
+    }
+
+    /** نگاشت رشتهٔ نوع تایل به Cell.Type با درنظر گرفتن هم‌معنی‌ها */
+    private static Cell.Type resolveType(String raw) {
+        if (raw == null) return Cell.Type.GROUND;
+        String s = raw.trim().toLowerCase();
+
+        // Road
+        if (s.equals("road") || s.equals("street") || s.equals("asphalt") || s.equals("lane")) {
+            return Cell.Type.ROAD;
+        }
+        // Sidewalk / Walkable on foot
+        if (s.equals("sidewalk") || s.equals("pavement") || s.equals("walkway") || s.equals("crosswalk")) {
+            return Cell.Type.SIDEWALK;
+        }
+        // Ground / Grass / Park
+        if (s.equals("ground") || s.equals("grass") || s.equals("park") || s.equals("dirt") || s.equals("lawn")) {
+            return Cell.Type.GROUND;
+        }
+        // Hospital
+        if (s.equals("hospital") || s.equals("clinic") || s.equals("medical") || s.equals("hospital_entrance")) {
+            return Cell.Type.HOSPITAL;
+        }
+        // Building
+        if (s.equals("building") || s.equals("house") || s.equals("wall")) {
+            return Cell.Type.BUILDING;
+        }
+        // Obstacles / debris / vehicles / rocks / trees / signs
+        if (s.equals("obstacle") || s.equals("car") || s.equals("vehicle") ||
+                s.equals("rubble") || s.equals("debris") || s.equals("rock") ||
+                s.equals("tree") || s.equals("sign") || s.equals("stop")) {
+            return Cell.Type.OBSTACLE;
+        }
+        if (s.equals("empty")) return Cell.Type.EMPTY;
+
+        // پیش‌فرض امن
+        return Cell.Type.GROUND;
     }
 }

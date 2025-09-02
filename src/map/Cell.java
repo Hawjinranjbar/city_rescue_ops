@@ -18,16 +18,16 @@ public class Cell {
         GROUND,     // زمین خنثی
         OBSTACLE,   // مانع مانند خودرو یا آوار
         BUILDING,   // ساختمان‌ها / غیرقابل عبور
-        HOSPITAL,   // نقطه تحویل مجروح
+        HOSPITAL,   // نقطه تحویل مجروح (غیرقابل عبور برای حرکت معمول)
         EMPTY;      // سلول خالی یا تعریف‌نشده
 
         /**
          * آیا این نوع سلول قابل عبور است؟
-         * برای سازگاری به عقب، هر دو نام isWalkable() و walkable() در دسترس هستند.
+         * نکته: برای جلوگیری از حرکت روی بیمارستان، HOSPITAL عبوری نیست.
          */
         public boolean isWalkable() {
-            // عبوری‌ها: جاده، پیاده‌رو، ورودی/ناحیهٔ بیمارستان
-            return this == ROAD || this == SIDEWALK || this == HOSPITAL;
+            // عبوری‌ها: فقط جاده و پیاده‌رو
+            return this == ROAD || this == SIDEWALK;
         }
 
         /** سازگاری با کد قدیمی که به جای isWalkable از walkable استفاده می‌کرد. */

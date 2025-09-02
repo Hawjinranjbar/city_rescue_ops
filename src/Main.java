@@ -4,20 +4,32 @@ import map.CityMap;
 import map.MapLoader;
 import playercontrol.DecisionInterface;
 import ui.GamePanel;
+import ui.HUDPanel;
 import ui.KeyHandler;
+import util.CollisionMap;
 import util.Position;
 import victim.Injured;
+import victim.InjurySeverity;
 
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Queue;
+import java.util.Random;
 
 public class Main {
 
     private static final String TMX_PATH = "assets/maps/rescue_city.tmx";
+    private static int nextVictimId = 1; // شناسه یکتا برای مجروح‌ها
+
+    // امتیاز و شمارش‌ها برای HUD
+    private static int score = 0;
+    private static int rescuedCount = 0;
+    private static int deadCount = 0;
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(new Runnable() {
@@ -26,23 +38,45 @@ public class Main {
                     // 1) لود نقشه از TMX
                     CityMap cityMap = MapLoader.loadTMX(TMX_PATH);
 
-                    // 2) ساخت یک Rescuer روی اولین تایل جاده
+                    // 1.1) لود CollisionMap (اختیاری)
+                    CollisionMap collisionMap = null;
+                    try {
+                        collisionMap = CollisionMap.fromTMX(TMX_PATH);
+                        if (collisionMap != null) {
+                            try { cityMap.setCollisionMap(collisionMap); } catch (Throwable ignored) {}
+                        }
+                    } catch (Throwable ex) {
+                        System.err.println("[WARN] CollisionMap load failed: " + ex.getMessage());
+                    }
+
+                    // 2) اسپاون «فقط روی ROAD»
+                    Position preferred = new Position(cityMap.getWidth() - 2, cityMap.getHeight() - 2);
+                    Position spawn = findNearestRoad(cityMap, preferred);
+                    if (spawn == null) spawn = scanFirstRoad(cityMap);
+                    if (spawn == null) {
+                        spawn = new Position(1, 1);
+                        System.err.println("[WARN] No ROAD found; fallback to (1,1)");
+                    }
+
+                    // 3) ساخت Rescuer + اشغال
                     List<Rescuer> rescuers = new ArrayList<Rescuer>();
-                    Position spawn = findFirstOfType(cityMap, Cell.Type.ROAD);
-                    if (spawn == null) spawn = new Position(1, 1);
                     Rescuer r1 = new Rescuer(1, spawn);
                     rescuers.add(r1);
                     cityMap.setOccupied(spawn.getX(), spawn.getY(), true);
 
-                    // 3) لیست مجروح‌ها (فعلاً خالی)
-                    List<Injured> victims = new ArrayList<Injured>();
+                    // 4) اسپاون مجروح‌ها روی آوار/خودروهای خراب (OBSTACLE)
+                    List<Injured> victims = spawnVictimsOnRubble(cityMap, /*count*/ 10, /*minDistFromRescuer*/ 2, r1);
 
-                    // 4) پنل رندر
+                    // 5) پنل‌های UI
                     final GamePanel panel = new GamePanel(cityMap, rescuers, victims);
                     panel.setDrawGrid(false);
                     panel.setDebugWalkable(false);
+                    panel.setFocusable(true);
 
-                    // 5) کنترل کیبورد برای Rescuer (بدون لامبدا)
+                    final HUDPanel hud = new HUDPanel();
+                    hud.updateHUD(score, rescuedCount, deadCount);
+
+                    // 6) کنترل کیبورد
                     DecisionInterface decision = new DecisionInterface() {
                         @Override
                         public Rescuer switchToNextRescuer(Rescuer current, List<Rescuer> all) {
@@ -52,30 +86,75 @@ public class Main {
                             return all.get((idx + 1) % all.size());
                         }
                         @Override
-                        public Injured chooseVictim(Rescuer current, List<Injured> candidates) {
+                        public victim.Injured chooseVictim(Rescuer current, List<victim.Injured> candidates) {
                             return (candidates == null || candidates.isEmpty()) ? null : candidates.get(0);
                         }
                     };
-                    KeyHandler kh = new KeyHandler(rescuers, r1, decision, cityMap, /*collision*/ null, panel);
+                    KeyHandler kh = new KeyHandler(rescuers, r1, decision, cityMap, collisionMap, panel);
                     panel.addKeyListener(kh);
 
-                    // 6) فریم و نمایش
+                    // 7) فریم و چیدمان
                     JFrame f = new JFrame("City Rescue Ops — Simulation");
                     f.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
                     f.setLayout(new BorderLayout());
                     f.add(panel, BorderLayout.CENTER);
+                    f.add(hud, BorderLayout.EAST);
                     f.pack();
                     f.setLocationRelativeTo(null);
                     f.setVisible(true);
                     panel.requestFocusInWindow();
 
-                    // 7) ریپینت سبک (بدون لامبدا)
+                    // 8) تایمر رندر سبک
                     javax.swing.Timer repaintTimer = new javax.swing.Timer(80, new ActionListener() {
                         @Override public void actionPerformed(ActionEvent e) {
                             panel.repaint();
                         }
                     });
                     repaintTimer.start();
+
+                    // 9) تایمر منطقیِ مجروح‌ها: هر ۱ ثانیه
+                    javax.swing.Timer victimTimer = new javax.swing.Timer(1000, new ActionListener() {
+                        @Override public void actionPerformed(ActionEvent e) {
+                            // قبل از بروزرسانی، شمارش‌های قبلی را نگه داریم
+                            int prevRescued = rescuedCount;
+                            int prevDead = deadCount;
+
+                            // تیک تایمر و تشخیص مرگ‌ها
+                            for (int i = 0; i < victims.size(); i++) {
+                                Injured v = victims.get(i);
+                                if (v == null) continue;
+                                // اگر هنوز نجات/مرگ نخورده، به‌روز شود
+                                if (!v.isRescued() && !v.isDead()) {
+                                    boolean diedNow = v.updateAndCheckDeath();
+                                    if (diedNow) {
+                                        deadCount++;
+                                        score = Math.max(0, score - 50); // پنالتی مرگ
+                                    }
+                                }
+                            }
+
+                            // شمارش نجات‌یافته‌ها (هرجا markAsRescued زده شد)
+                            int resc = 0;
+                            for (int i = 0; i < victims.size(); i++) {
+                                Injured v = victims.get(i);
+                                if (v != null && v.isRescued()) resc++;
+                            }
+                            // امتیاز برای نجات‌های جدید
+                            if (resc > rescuedCount) {
+                                int diff = resc - rescuedCount;
+                                score += diff * 100;
+                            }
+                            rescuedCount = resc;
+
+                            // اگر تغییری رخ داد، HUD را به‌روز کن
+                            if (rescuedCount != prevRescued || deadCount != prevDead) {
+                                hud.updateHUD(score, rescuedCount, deadCount);
+                            }
+                            // رندر مجدد
+                            panel.repaint();
+                        }
+                    });
+                    victimTimer.start();
 
                 } catch (Exception ex) {
                     ex.printStackTrace();
@@ -86,13 +165,128 @@ public class Main {
         });
     }
 
-    private static Position findFirstOfType(CityMap map, Cell.Type type) {
-        for (int y = 0; y < map.getHeight(); y++) {
-            for (int x = 0; x < map.getWidth(); x++) {
+    /** --- اسپاون مجروح روی آوار/خودروهای خراب (OBSTACLE) --- */
+    private static List<Injured> spawnVictimsOnRubble(CityMap map, int count, int minDistFromRescuer, Rescuer rescuer) {
+        List<Position> rubble = new ArrayList<Position>();
+        int w = map.getWidth(), h = map.getHeight();
+
+        // جمع‌آوری تایل‌های OBSTACLE که اشغال نشده‌اند
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
                 Cell c = map.getCell(x, y);
-                if (c != null && c.getType() == type) return new Position(x, y);
+                if (c == null) continue;
+                if (c.getType() == Cell.Type.OBSTACLE && !c.isOccupied()) {
+                    rubble.add(new Position(x, y));
+                }
+            }
+        }
+
+        List<Injured> out = new ArrayList<Injured>();
+        if (rubble.isEmpty()) return out;
+
+        Random rnd = new Random();
+        int placed = 0;
+        int safety = rubble.size() * 3;
+
+        int rx = (rescuer != null && rescuer.getPosition() != null) ? rescuer.getPosition().getX() : -999;
+        int ry = (rescuer != null && rescuer.getPosition() != null) ? rescuer.getPosition().getY() : -999;
+
+        while (placed < count && safety-- > 0 && !rubble.isEmpty()) {
+            int idx = rnd.nextInt(rubble.size());
+            Position p = rubble.get(idx);
+
+            // فاصلهٔ حداقلی از ریسکیور
+            if (rx != -999) {
+                int dx = Math.abs(p.getX() - rx);
+                int dy = Math.abs(p.getY() - ry);
+                if (dx + dy < minDistFromRescuer) {
+                    rubble.remove(idx);
+                    continue;
+                }
+            }
+
+            // شدت مجروح چرخشی
+            InjurySeverity sev;
+            if (placed % 3 == 0) sev = InjurySeverity.CRITICAL;
+            else if (placed % 3 == 1) sev = InjurySeverity.MEDIUM;
+            else sev = InjurySeverity.LOW;
+
+            // زمان اولیه بر اساس شدت: (CRITICAL=60, MEDIUM=120, LOW=180)
+            int ttl = (sev == InjurySeverity.CRITICAL) ? 60
+                    : (sev == InjurySeverity.MEDIUM) ? 120 : 180;
+
+            Injured inj = new Injured(nextVictimId++, p, sev, ttl);
+            out.add(inj);
+            placed++;
+
+            rubble.remove(idx);
+        }
+
+        System.out.println("[VictimSpawner] spawned " + out.size() + " victims on OBSTACLE tiles.");
+        return out;
+    }
+
+    /** BFS: نزدیک‌ترین کاشی ROAD به نقطهٔ ترجیحی. */
+    private static Position findNearestRoad(CityMap map, Position preferred) {
+        if (preferred == null) return null;
+        int px = clamp(preferred.getX(), 0, map.getWidth() - 1);
+        int py = clamp(preferred.getY(), 0, map.getHeight() - 1);
+
+        // اگر خودش ROAD بود
+        if (map.isValid(px, py)) {
+            Cell c0 = map.getCell(px, py);
+            if (c0 != null && c0.getType() == Cell.Type.ROAD) {
+                return new Position(px, py);
+            }
+        }
+
+        boolean[][] vis = new boolean[map.getHeight()][map.getWidth()];
+        Queue<Position> q = new ArrayDeque<Position>();
+        q.offer(new Position(px, py));
+        vis[py][px] = true;
+
+        int[] dx = new int[] { 0, 0, -1, 1 };
+        int[] dy = new int[] { -1, 1, 0, 0 };
+
+        while (!q.isEmpty()) {
+            Position cur = q.poll();
+            int cx = cur.getX(), cy = cur.getY();
+
+            if (map.isValid(cx, cy)) {
+                Cell c = map.getCell(cx, cy);
+                if (c != null && c.getType() == Cell.Type.ROAD) {
+                    return new Position(cx, cy);
+                }
+            }
+
+            for (int i = 0; i < 4; i++) {
+                int nx = cx + dx[i];
+                int ny = cy + dy[i];
+                if (map.isValid(nx, ny) && !vis[ny][nx]) {
+                    vis[ny][nx] = true;
+                    q.offer(new Position(nx, ny));
+                }
             }
         }
         return null;
+    }
+
+    /** اسکن سادهٔ کل نقشه برای یافتن اولین ROAD. */
+    private static Position scanFirstRoad(CityMap map) {
+        for (int y = 0; y < map.getHeight(); y++) {
+            for (int x = 0; x < map.getWidth(); x++) {
+                Cell c = map.getCell(x, y);
+                if (c != null && c.getType() == Cell.Type.ROAD) {
+                    return new Position(x, y);
+                }
+            }
+        }
+        return null;
+    }
+
+    private static int clamp(int v, int lo, int hi) {
+        if (v < lo) return lo;
+        if (v > hi) return hi;
+        return v;
     }
 }
