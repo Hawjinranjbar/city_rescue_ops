@@ -10,13 +10,14 @@ import map.CityMap;
  * جهت‌ها: 0=DOWN, 1=LEFT, 2=RIGHT, 3=UP
  *
  * سیاست عبور:
- * - فقط اگر نوع سلول مقصد قابل‌عبور باشد (ROAD/SIDEWALK) و در CollisionMap هم قابل‌عبور باشد، حرکت انجام می‌شود.
- * - بیمارستان (HOSPITAL) و موانع (OBSTACLE/BUILDING) کاملاً بلاک هستند.
- * - به علاوه، اگر سلول مقصد occupied باشد، حرکت انجام نمی‌شود.
+ * - حالت عادی (ریسکیور): dest.isWalkable() و CollisionMap باید اجازه بدهند.
+ * - حالت آمبولانس (rescuer.isRoadOnlyMode()==true): فقط روی ROAD اجازه دارد
+ *   (SIDEWALK/پیاده‌رو و ... ممنوع)، Hospital ممنوع (تحویل در خانه‌های مجاور).
+ * - اگر سلول مقصد occupied باشد، حرکت انجام نمی‌شود.
  */
 public final class MoveGuard {
 
-    private MoveGuard() {}
+    private MoveGuard() { }
 
     /** تلاش برای حرکت Rescuer به (nx,ny). در صورت موفقیت، occupied مبدأ/مقصد به‌روز می‌شود. */
     public static boolean tryMoveTo(CityMap map,
@@ -39,11 +40,22 @@ public final class MoveGuard {
         if (dest == null) return false;
         if (dest.isOccupied()) return false;
 
-        // بیمارستان به‌طور صریح بلاک است (علاوه بر isWalkable=false)
+        // بیمارستان به‌طور صریح بلاک است (تحویل در مجاورت انجام می‌شود)
         if (dest.isHospital()) return false;
 
-        // شرط نوع سلول (ROAD/SIDEWALK) + شرط CollisionMap (در صورت وجود)
-        boolean passByType = dest.isWalkable();  // الان HOSPITAL و موانع عبوری نیستند
+        // --- قاعدهٔ راه: اگر آمبولانس هست → فقط ROAD، وگرنه walkable ---
+        boolean roadOnly = false;
+        try {
+            roadOnly = rescuer.isRoadOnlyMode();
+        } catch (Throwable ignored) { }
+
+        boolean passByType;
+        if (roadOnly) {
+            passByType = isRoadCell(dest);   // فقط جاده
+        } else {
+            passByType = dest.isWalkable();  // جاده/پیاده‌رو و... که walkable هستند
+        }
+
         boolean passByCollision = (collisionMap == null) || collisionMap.isWalkable(nx, ny);
         if (!passByType || !passByCollision) return false;
 
@@ -58,7 +70,10 @@ public final class MoveGuard {
         return true;
     }
 
-    /** حرکت Vehicle با قید برخورد/اشغال (اگر بعداً وسیله‌ای داشته باشی). */
+    /**
+     * حرکت Vehicle با قید برخورد/اشغال.
+     * وسایط نقلیه (از جمله آمبولانس اختصاصی، اگر استفاده شد) به‌صورت پیش‌فرض «فقط ROAD».
+     */
     public static boolean tryMoveToVehicle(CityMap map,
                                            CollisionMap vehicleCM, // می‌تواند null باشد
                                            Vehicle vehicle,
@@ -74,7 +89,7 @@ public final class MoveGuard {
         if (dest.isOccupied()) return false;
         if (dest.isHospital()) return false;
 
-        boolean passByType = dest.isWalkable();
+        boolean passByType = isRoadCell(dest); // وسایل نقلیه: فقط جاده
         boolean passByCollision = (vehicleCM == null) || vehicleCM.isWalkable(nx, ny);
         if (!passByType || !passByCollision) return false;
 
@@ -93,6 +108,35 @@ public final class MoveGuard {
         return true;
     }
 
+    // ---- Helper: تعیین اینکه یک سلول «ROAD» است یا نه (سازگار با انواع پیاده‌سازی Cell) ----
+    private static boolean isRoadCell(Cell dest) {
+        // 1) اگر متدی به نام isRoad() داشته باشی
+        try {
+            java.lang.reflect.Method m = dest.getClass().getMethod("isRoad");
+            Object r = m.invoke(dest);
+            if (r instanceof Boolean) {
+                if (((Boolean) r).booleanValue()) return true;
+                else return false;
+            }
+        } catch (Throwable ignored) { }
+
+        // 2) اگر getType() برگردان Enum/String بده و نامش ROAD باشد
+        try {
+            java.lang.reflect.Method m2 = dest.getClass().getMethod("getType");
+            Object t = m2.invoke(dest);
+            if (t != null) {
+                String name = t.toString();
+                if (name != null) {
+                    name = name.toUpperCase();
+                    if (name.indexOf("ROAD") >= 0) return true;
+                }
+            }
+        } catch (Throwable ignored) { }
+
+        // اگر چیزی تشخیص ندادیم، به‌صورت محافظه‌کارانه false
+        return false;
+    }
+
     // ---- هِلپرهای ایمن (سازگاری با نسخه‌های مختلف Rescuer) ----
     private static void safeMove(Rescuer r, int x, int y, int dir) {
         try {
@@ -102,18 +146,18 @@ public final class MoveGuard {
             r.setPositionXY(x, y);
             safeSetDir(r, dir);
             safeNext(r);
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) { }
     }
 
     private static void safeSetDir(Rescuer r, int dir) {
         try {
             r.getClass().getMethod("setDirection", int.class).invoke(r, dir);
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) { }
     }
 
     private static void safeNext(Rescuer r) {
         try {
             r.getClass().getMethod("nextFrame").invoke(r);
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) { }
     }
 }
