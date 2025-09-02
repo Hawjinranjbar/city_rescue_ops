@@ -1,4 +1,5 @@
 import agent.Rescuer;
+import controller.ScoreManager;
 import map.Cell;
 import map.CityMap;
 import map.MapLoader;
@@ -17,19 +18,21 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Queue;
 import java.util.Random;
+import java.util.Set;
 
 public class Main {
 
     private static final String TMX_PATH = "assets/maps/rescue_city.tmx";
     private static int nextVictimId = 1; // شناسه یکتا برای مجروح‌ها
 
-    // امتیاز و شمارش‌ها برای HUD
-    private static int score = 0;
+    // شمارش‌ها برای HUD
     private static int rescuedCount = 0;
     private static int deadCount = 0;
+    private static Set<Integer> rewardedRescues = new HashSet<Integer>();
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(new Runnable() {
@@ -73,8 +76,10 @@ public class Main {
                     panel.setDebugWalkable(false);
                     panel.setFocusable(true);
 
+                    // امتیاز اولیه به 500 بازنشانی شود و در HUD نمایش یابد
+                    ScoreManager.resetToDefault();
                     final HUDPanel hud = new HUDPanel();
-                    hud.updateHUD(score, rescuedCount, deadCount);
+                    hud.updateHUD(ScoreManager.getScore(), rescuedCount, deadCount);
 
                     // 6) کنترل کیبورد
                     DecisionInterface decision = new DecisionInterface() {
@@ -115,10 +120,6 @@ public class Main {
                     // 9) تایمر منطقیِ مجروح‌ها: هر ۱ ثانیه
                     javax.swing.Timer victimTimer = new javax.swing.Timer(1000, new ActionListener() {
                         @Override public void actionPerformed(ActionEvent e) {
-                            // قبل از بروزرسانی، شمارش‌های قبلی را نگه داریم
-                            int prevRescued = rescuedCount;
-                            int prevDead = deadCount;
-
                             // تیک تایمر و تشخیص مرگ‌ها
                             for (int i = 0; i < victims.size(); i++) {
                                 Injured v = victims.get(i);
@@ -128,28 +129,28 @@ public class Main {
                                     boolean diedNow = v.updateAndCheckDeath();
                                     if (diedNow) {
                                         deadCount++;
-                                        score = Math.max(0, score - 50); // پنالتی مرگ
+                                        // جریمه بر اساس 2×زمان اولیه
+                                        ScoreManager.applyDeathPenalty(v);
                                     }
                                 }
                             }
 
-                            // شمارش نجات‌یافته‌ها (هرجا markAsRescued زده شد)
+                            // شمارش نجات‌یافته‌ها و پاداش برای نجات‌های جدید
                             int resc = 0;
                             for (int i = 0; i < victims.size(); i++) {
                                 Injured v = victims.get(i);
-                                if (v != null && v.isRescued()) resc++;
-                            }
-                            // امتیاز برای نجات‌های جدید
-                            if (resc > rescuedCount) {
-                                int diff = resc - rescuedCount;
-                                score += diff * 100;
+                                if (v != null && v.isRescued()) {
+                                    resc++;
+                                    if (!rewardedRescues.contains(v.getId())) {
+                                        ScoreManager.applyRescueReward(v);
+                                        rewardedRescues.add(v.getId());
+                                    }
+                                }
                             }
                             rescuedCount = resc;
 
-                            // اگر تغییری رخ داد، HUD را به‌روز کن
-                            if (rescuedCount != prevRescued || deadCount != prevDead) {
-                                hud.updateHUD(score, rescuedCount, deadCount);
-                            }
+                            // HUD را با امتیاز سراسری به‌روز کن
+                            hud.updateHUD(ScoreManager.getScore(), rescuedCount, deadCount);
                             // رندر مجدد
                             panel.repaint();
                         }
