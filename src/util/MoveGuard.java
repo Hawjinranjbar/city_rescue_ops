@@ -92,6 +92,9 @@ public final class MoveGuard {
 
         boolean passByType = dest.isRoad();
 
+
+        boolean passByType = dest.isRoad();
+
         boolean passByType = isRoadCell(dest); // وسایل نقلیه: فقط جاده
 
         boolean passByCollision = (vehicleCM == null) || vehicleCM.isWalkable(nx, ny);

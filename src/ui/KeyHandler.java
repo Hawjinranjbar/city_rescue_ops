@@ -70,7 +70,7 @@ public class KeyHandler extends KeyAdapter {
         boolean moved = false;
         int code = e.getKeyCode();
 
-        // ---------- Vehicle با WASD ----------
+        // ---------- کنترل Vehicle با WASD یا Arrow ----------
         if (controlVehicle && vehicle != null) {
             Position t = vehicle.getTile();
             if (t != null) {
@@ -78,15 +78,19 @@ public class KeyHandler extends KeyAdapter {
                 int ny = t.getY();
                 switch (code) {
                     case KeyEvent.VK_W:
+                    case KeyEvent.VK_UP:
                         ny--;
                         break;
                     case KeyEvent.VK_S:
+                    case KeyEvent.VK_DOWN:
                         ny++;
                         break;
                     case KeyEvent.VK_A:
+                    case KeyEvent.VK_LEFT:
                         nx--;
                         break;
                     case KeyEvent.VK_D:
+                    case KeyEvent.VK_RIGHT:
                         nx++;
                         break;
                     default:
@@ -94,12 +98,10 @@ public class KeyHandler extends KeyAdapter {
                 }
                 if (nx != t.getX() || ny != t.getY()) {
                     moved = tryMoveVehicle(nx, ny);
-                    if (moved && panel != null) {
-                        panel.repaint();
-                        return;
-                    }
                 }
+                if (panel != null) panel.repaint();
             }
+            return; // وقتی Vehicle فعال است، حرکت Rescuer ممنوع
         }
 
         // ---------- کلیدهای عمومی ----------
@@ -160,10 +162,14 @@ public class KeyHandler extends KeyAdapter {
             default:
                 break;
         }
+        if (!controlVehicle) checkPickup();
+        if (panel != null) panel.repaint();
+
         if (moved) {
             if (!controlVehicle) checkPickup();
             if (panel != null) panel.repaint();
         }
+
     }
 
     /**
