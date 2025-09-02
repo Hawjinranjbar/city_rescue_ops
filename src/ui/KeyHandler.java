@@ -8,6 +8,7 @@ import map.CityMap;
 import playercontrol.DecisionInterface;
 import util.CollisionMap;
 import util.Position;
+import victim.Injured;
 
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
@@ -37,23 +38,30 @@ public class KeyHandler extends KeyAdapter {
     private Vehicle vehicle;
     private boolean controlVehicle = false;       // اگر true، WASD برای ماشین است
     private CollisionMap vehicleCollision = null; // می‌تواند null باشد
+    private final List<Injured> victims;
+    private Injured transportingVictim = null;
 
     public KeyHandler(List<Rescuer> rescuers,
                       Rescuer initialRescuer,
                       DecisionInterface decisionInterface,
                       CityMap map,
                       CollisionMap collisionMap,
-                      GamePanel panel) {
+                      GamePanel panel,
+                      List<Injured> victims) {
         this.allRescuers = rescuers;
         this.currentRescuer = initialRescuer;
         this.decisionInterface = decisionInterface;
         this.map = map;
         this.collisionMap = collisionMap;
         this.panel = panel;
+        this.victims = victims;
     }
 
     // اتصال/تنظیم ماشین (اختیاری)
-    public void attachVehicle(Vehicle v) { this.vehicle = v; }
+    public void attachVehicle(Vehicle v) {
+        this.vehicle = v;
+        if (panel != null) panel.setVehicle(v);
+    }
     public void setControlVehicle(boolean on) { this.controlVehicle = on; }
     public void setVehicleCollision(CollisionMap cm) { this.vehicleCollision = cm; }
 
@@ -62,7 +70,7 @@ public class KeyHandler extends KeyAdapter {
         boolean moved = false;
         int code = e.getKeyCode();
 
-        // ---------- Vehicle با WASD ----------
+        // ---------- کنترل Vehicle با WASD یا Arrow ----------
         if (controlVehicle && vehicle != null) {
             Position t = vehicle.getTile();
             if (t != null) {
@@ -70,15 +78,19 @@ public class KeyHandler extends KeyAdapter {
                 int ny = t.getY();
                 switch (code) {
                     case KeyEvent.VK_W:
+                    case KeyEvent.VK_UP:
                         ny--;
                         break;
                     case KeyEvent.VK_S:
+                    case KeyEvent.VK_DOWN:
                         ny++;
                         break;
                     case KeyEvent.VK_A:
+                    case KeyEvent.VK_LEFT:
                         nx--;
                         break;
                     case KeyEvent.VK_D:
+                    case KeyEvent.VK_RIGHT:
                         nx++;
                         break;
                     default:
@@ -86,12 +98,10 @@ public class KeyHandler extends KeyAdapter {
                 }
                 if (nx != t.getX() || ny != t.getY()) {
                     moved = tryMoveVehicle(nx, ny);
-                    if (moved && panel != null) {
-                        panel.repaint();
-                        return;
-                    }
                 }
+                if (panel != null) panel.repaint();
             }
+            return; // وقتی Vehicle فعال است، حرکت Rescuer ممنوع
         }
 
         // ---------- کلیدهای عمومی ----------
@@ -152,8 +162,8 @@ public class KeyHandler extends KeyAdapter {
             default:
                 break;
         }
-
-        if (moved && panel != null) panel.repaint();
+        if (!controlVehicle) checkPickup();
+        if (panel != null) panel.repaint();
     }
 
     /**
@@ -170,7 +180,7 @@ public class KeyHandler extends KeyAdapter {
         if (dest.isHospital()) return false;
 
         // عبوری‌بودن بر اساس نوع سلول (فقط Road/Sidewalk)
-        boolean passByType = dest.isWalkable(); // HOSPITAL/OBSTACLE/BUILDING عبوری نیستند
+        boolean passByType = dest.isRoad();
 
         // عبوری‌بودن بر اساس CollisionMap (در صورت وجود)
         boolean passByCollision = (vehicleCollision == null) || vehicleCollision.isWalkable(nx, ny);
@@ -178,7 +188,61 @@ public class KeyHandler extends KeyAdapter {
         if (!passByType || !passByCollision) return false;
 
         // واگذاری حرکت نهایی به MoveGuard (اشغال قبلی/جدید هم آن‌جا مدیریت می‌شود)
-        return util.MoveGuard.tryMoveToVehicle(map, vehicleCollision, vehicle, nx, ny);
+        boolean moved = util.MoveGuard.tryMoveToVehicle(map, vehicleCollision, vehicle, nx, ny);
+        if (moved) {
+            currentRescuer.setPosition(vehicle.getTile());
+            checkHospitalArrival();
+        }
+        return moved;
+    }
+
+    private void checkPickup() {
+        if (victims == null || currentRescuer == null) return;
+        Position rp = currentRescuer.getPosition();
+        if (rp == null) return;
+        for (Injured v : victims) {
+            if (v == null || !v.canBeRescued()) continue;
+            Position vp = v.getPosition();
+            if (vp == null) continue;
+            int d = Math.abs(vp.getX() - rp.getX()) + Math.abs(vp.getY() - rp.getY());
+            if (d == 1) {
+                startTransport(v);
+                break;
+            }
+        }
+    }
+
+    private void startTransport(Injured v) {
+        transportingVictim = v;
+        v.setBeingRescued(true);
+        v.getRescueTimer().stop();
+        currentRescuer.pickUp(v);
+        Vehicle amb = new Vehicle(1000, currentRescuer.getPosition(), vehicleCollision);
+        attachVehicle(amb);
+        controlVehicle = true;
+    }
+
+    private void checkHospitalArrival() {
+        if (!controlVehicle || vehicle == null || transportingVictim == null) return;
+        Position p = vehicle.getTile();
+        if (p == null) return;
+        if (isHospitalNeighbor(p.getX(), p.getY())) {
+            currentRescuer.dropVictim();
+            transportingVictim = null;
+            controlVehicle = false;
+            attachVehicle(null);
+        }
+    }
+
+    private boolean isHospitalNeighbor(int x, int y) {
+        return isHospitalAt(x + 1, y) || isHospitalAt(x - 1, y) ||
+                isHospitalAt(x, y + 1) || isHospitalAt(x, y - 1);
+    }
+
+    private boolean isHospitalAt(int x, int y) {
+        if (!map.isValid(x, y)) return false;
+        Cell c = map.getCell(x, y);
+        return c != null && c.isHospital();
     }
 
     public Rescuer getCurrentRescuer() { return currentRescuer; }

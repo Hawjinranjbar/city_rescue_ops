@@ -83,13 +83,12 @@ public class VictimManager {
         }
     }
 
-    /** اعلام نجات یک مجروح: وضعیت نجات + (اختیاری) پاداش */
+    /** اعلام نجات یک مجروح: وضعیت نجات + پاداش امتیاز */
     public void onVictimRescued(Injured injured) {
         if (injured == null) return;
         if (!injured.isDead() && !injured.isRescued()) {
             injured.markAsRescued();
-            // اگر پاداش لازم داری، این خط را باز کن:
-            // ScoreManager.addRescueRewardBySeverity(injured.getSeverity());
+            ScoreManager.applyRescueReward(injured); // +2×زمان اولیه
         }
     }
 }
