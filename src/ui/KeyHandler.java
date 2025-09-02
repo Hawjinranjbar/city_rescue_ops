@@ -164,6 +164,12 @@ public class KeyHandler extends KeyAdapter {
         }
         if (!controlVehicle) checkPickup();
         if (panel != null) panel.repaint();
+
+        if (moved) {
+            if (!controlVehicle) checkPickup();
+            if (panel != null) panel.repaint();
+        }
+
     }
 
     /**

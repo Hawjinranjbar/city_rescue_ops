@@ -22,6 +22,9 @@ import java.util.*;
  */
 public final class CollisionMap {
 
+    /** حالت ساخت خودکار از TMX */
+    public enum Mode { PEDESTRIAN, VEHICLE }
+
     private final int width;
     private final int height;
     // walkable[y][x] = true => عبوری
@@ -34,6 +37,22 @@ public final class CollisionMap {
         this.width = width;
         this.height = height;
         this.walkable = new boolean[height][width];
+    }
+
+    /** کپی عمیق */
+    public CollisionMap copy() {
+        CollisionMap c = new CollisionMap(width, height);
+        for (int y = 0; y < height; y++) {
+            System.arraycopy(this.walkable[y], 0, c.walkable[y], 0, width);
+        }
+        return c;
+    }
+
+    /** پرکردن کل نقشه با مقدار عبوری/مسدود */
+    public void fill(boolean canPass) {
+        for (int y = 0; y < height; y++) {
+            Arrays.fill(walkable[y], canPass);
+        }
     }
 
     /** آیا مختصات تایل‌محور (x,y) قابل عبور است؟  خارج مرز => false */
@@ -60,6 +79,45 @@ public final class CollisionMap {
     }
 
     /* =========================
+       0) ساخت خودکار از TMX بر اساس Mode
+       ========================= */
+
+    /**
+     * تلاش می‌کند بر اساس نام‌های رایج لایه‌ها CollisionMap بسازد.
+     * اگر لایهٔ مناسب پیدا نشود، به متد legacy {@link #fromTMX(String)} برمی‌گردد.
+     */
+    public static CollisionMap autoFromTMX(String tmxPath, Mode mode) {
+        try {
+            Document doc = parseXML(tmxPath);
+            String[] veh = new String[] {
+                    "CollisionLayer_Vehicle", "VehicleCollision", "Collision_Vehicle",
+                    "vehicle", "VEHICLE"
+            };
+            String[] ped = new String[] {
+                    "CollisionLayer_Pedestrian", "Walkable", "Collision_Pedestrian",
+                    "walkable", "PEDESTRIAN"
+            };
+            String[] names = mode == Mode.VEHICLE ? veh : ped;
+
+            for (int i = 0; i < names.length; i++) {
+                String name = names[i];
+                Element layer = findLayerByName(doc, name);
+                if (layer != null) {
+                    // این یک لایهٔ باینری CSV است: 0=عبوری, غیرصفر=مسدود
+                    return fromBinaryLayerParsed(doc, name);
+                }
+            }
+        } catch (Exception ignored) { }
+
+        // fallback
+        try {
+            return fromTMX(tmxPath);
+        } catch (Exception e) {
+            throw new RuntimeException("autoFromTMX failed: " + e.getMessage(), e);
+        }
+    }
+
+    /* =========================
        1) ساخت از لایه‌ی باینری CSV در TMX
        ========================= */
 
@@ -70,32 +128,37 @@ public final class CollisionMap {
     public static CollisionMap fromBinaryLayer(String tmxPath, String layerName) {
         try {
             Document doc = parseXML(tmxPath);
-            Element map = (Element) doc.getElementsByTagName("map").item(0);
-            int w = Integer.parseInt(map.getAttribute("width"));
-            int h = Integer.parseInt(map.getAttribute("height"));
-            CollisionMap cm = new CollisionMap(w, h);
-
-            Element layer = findLayerByName(doc, layerName);
-            if (layer == null) {
-                throw new IllegalStateException("Layer not found: " + layerName);
-            }
-            Element data = (Element) layer.getElementsByTagName("data").item(0);
-            String encoding = data.getAttribute("encoding");
-            if (!"csv".equalsIgnoreCase(encoding)) {
-                throw new IllegalStateException("Only CSV encoding is supported for layer: " + layerName);
-            }
-
-            int[][] vals = readCsvGrid(data.getTextContent(), w, h);
-            for (int y = 0; y < h; y++) {
-                for (int x = 0; x < w; x++) {
-                    int v = vals[y][x];
-                    cm.set(x, y, v != 0); // 0 => عبوری, غیر صفر => مسدود
-                }
-            }
-            return cm;
+            return fromBinaryLayerParsed(doc, layerName);
         } catch (Exception ex) {
             throw new RuntimeException("fromBinaryLayer failed: " + ex.getMessage(), ex);
         }
+    }
+
+    /** نسخه‌ای که Document آماده دارد (برای autoFromTMX) */
+    private static CollisionMap fromBinaryLayerParsed(Document doc, String layerName) throws Exception {
+        Element map = (Element) doc.getElementsByTagName("map").item(0);
+        int w = Integer.parseInt(map.getAttribute("width"));
+        int h = Integer.parseInt(map.getAttribute("height"));
+        CollisionMap cm = new CollisionMap(w, h);
+
+        Element layer = findLayerByName(doc, layerName);
+        if (layer == null) {
+            throw new IllegalStateException("Layer not found: " + layerName);
+        }
+        Element data = (Element) layer.getElementsByTagName("data").item(0);
+        String encoding = data.getAttribute("encoding");
+        if (!"csv".equalsIgnoreCase(encoding)) {
+            throw new IllegalStateException("Only CSV encoding is supported for layer: " + layerName);
+        }
+
+        int[][] vals = readCsvGrid(data.getTextContent(), w, h);
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int v = vals[y][x];
+                cm.set(x, y, v != 0); // 0 => عبوری, غیر صفر => مسدود
+            }
+        }
+        return cm;
     }
 
     /* =========================
@@ -122,7 +185,9 @@ public final class CollisionMap {
             for (int y = 0; y < h; y++) Arrays.fill(cm.walkable[y], false);
 
             // 2-1) عبوری‌ها
-            for (String ln : (walkableLayers == null ? Collections.<String>emptyList() : walkableLayers)) {
+            List<String> wl = (walkableLayers == null) ? Collections.<String>emptyList() : walkableLayers;
+            for (int i = 0; i < wl.size(); i++) {
+                String ln = wl.get(i);
                 Element layer = findLayerByName(doc, ln);
                 if (layer == null) continue;
                 Element data = (Element) layer.getElementsByTagName("data").item(0);
@@ -137,7 +202,9 @@ public final class CollisionMap {
             }
 
             // 2-2) مسدودی‌ها (ارجحیت)
-            for (String ln : (blockedLayers == null ? Collections.<String>emptyList() : blockedLayers)) {
+            List<String> bl = (blockedLayers == null) ? Collections.<String>emptyList() : blockedLayers;
+            for (int i = 0; i < bl.size(); i++) {
+                String ln = bl.get(i);
                 Element layer = findLayerByName(doc, ln);
                 if (layer == null) continue;
                 Element data = (Element) layer.getElementsByTagName("data").item(0);
@@ -182,15 +249,14 @@ public final class CollisionMap {
 
         class TilesetInfo {
             int firstGid;
-            Set<Integer> walkableIds = new HashSet<>();
-            boolean owns(int gid) { return gid >= firstGid; }
+            Set<Integer> walkableIds = new HashSet<Integer>();
             boolean isWalkableGid(int gid) {
                 int local = gid - firstGid;
                 return walkableIds.contains(local);
             }
         }
 
-        List<TilesetInfo> tilesets = new ArrayList<>();
+        List<TilesetInfo> tilesets = new ArrayList<TilesetInfo>();
         for (int i = 0; i < tilesetNodes.getLength(); i++) {
             Element ts = (Element) tilesetNodes.item(i);
             TilesetInfo info = new TilesetInfo();
@@ -220,14 +286,14 @@ public final class CollisionMap {
             throw new IllegalStateException("Only CSV encoding supported in legacy fromTMX");
 
         String[] rawLines = data.getTextContent().trim().split("\\R+");
-        int idx = 0;
         for (int y = 0; y < height; y++) {
             String[] toks = rawLines[y].trim().split(",");
             for (int x = 0; x < width; x++) {
                 int gid = Integer.parseInt(toks[x].trim());
                 boolean walk = false;
                 if (gid != 0) {
-                    for (TilesetInfo ts : tilesets) {
+                    for (int j = 0; j < tilesets.size(); j++) {
+                        TilesetInfo ts = tilesets.get(j);
                         if (gid >= ts.firstGid && ts.isWalkableGid(gid)) {
                             walk = true;
                             break;
@@ -235,7 +301,6 @@ public final class CollisionMap {
                     }
                 }
                 cm.walkable[y][x] = walk;
-                idx++;
             }
         }
         return cm;
@@ -316,7 +381,8 @@ public final class CollisionMap {
         // شروع: همه عبوری
         for (int y = 0; y < h; y++) Arrays.fill(out.walkable[y], true);
 
-        for (CollisionMap m : maps) {
+        for (int i = 0; i < maps.size(); i++) {
+            CollisionMap m = maps.get(i);
             if (m.width != w || m.height != h)
                 throw new IllegalArgumentException("All maps must have the same size");
             for (int y = 0; y < h; y++) {
@@ -327,6 +393,34 @@ public final class CollisionMap {
             }
         }
         return out;
+    }
+
+    /* =========================
+       6) خروجی گرفتن برای دیباگ
+       ========================= */
+
+    /**
+     * خروجی ماسک PNG برای دیباگ: سفید=عبوری، سیاه=مسدود.
+     * هر تایل به اندازهٔ tileW×tileH ترسیم می‌شود.
+     */
+    public void exportMaskPNG(String outPath, int tileW, int tileH) throws IOException {
+        if (tileW <= 0) tileW = 1;
+        if (tileH <= 0) tileH = 1;
+        BufferedImage img = new BufferedImage(width * tileW, height * tileH, BufferedImage.TYPE_INT_RGB);
+        int white = 0xFFFFFF;
+        int black = 0x000000;
+
+        for (int ty = 0; ty < height; ty++) {
+            for (int tx = 0; tx < width; tx++) {
+                int color = walkable[ty][tx] ? white : black;
+                for (int oy = 0; oy < tileH; oy++) {
+                    for (int ox = 0; ox < tileW; ox++) {
+                        img.setRGB(tx * tileW + ox, ty * tileH + oy, color);
+                    }
+                }
+            }
+        }
+        ImageIO.write(img, "png", new File(outPath));
     }
 
     /* =========================
@@ -344,42 +438,41 @@ public final class CollisionMap {
         NodeList layers = doc.getElementsByTagName("layer");
         for (int i = 0; i < layers.getLength(); i++) {
             Element e = (Element) layers.item(i);
-            if (name.equals(e.getAttribute("name"))) return e;
+            if (name.equals(e.getAttribute("name")) || name.equalsIgnoreCase(e.getAttribute("name"))) return e;
         }
         return null;
     }
 
     /** خواندن CSV به ماتریس [y][x] با حذف فضا و خطوط خالی. */
     private static int[][] readCsvGrid(String csvText, int w, int h) {
-        String[] rawLines = csvText.trim().split("\\R+");
-        if (rawLines.length != h) {
-            // اگر بعضی خطوط خالی/فضا دارد، بازسازی امن:
-            List<Integer> flat = new ArrayList<>(w*h);
-            for (String line : rawLines) {
-                String t = line.trim();
-                if (t.isEmpty()) continue;
-                for (String s : t.split(",")) {
-                    String ss = s.trim();
-                    if (!ss.isEmpty()) flat.add(Integer.parseInt(ss));
-                }
+        String trimmed = csvText == null ? "" : csvText.trim();
+        String[] rawLines = trimmed.split("\\R+");
+
+        // مسیر امن در صورت وجود خطوط خالی/اضافی
+        List<Integer> flat = new ArrayList<Integer>(w * h);
+        for (int i = 0; i < rawLines.length; i++) {
+            String line = rawLines[i];
+            if (line == null) continue;
+            String t = line.trim();
+            if (t.length() == 0) continue;
+            String[] parts = t.split(",");
+            for (int j = 0; j < parts.length; j++) {
+                String ss = parts[j].trim();
+                if (ss.length() == 0) continue;
+                flat.add(Integer.valueOf(Integer.parseInt(ss)));
             }
-            if (flat.size() != w*h)
-                throw new IllegalStateException("CSV size mismatch: expected " + (w*h) + " got " + flat.size());
-            int[][] out = new int[h][w];
-            int idx = 0;
-            for (int y = 0; y < h; y++)
-                for (int x = 0; x < w; x++)
-                    out[y][x] = flat.get(idx++);
-            return out;
-        } else {
-            int[][] out = new int[h][w];
-            for (int y = 0; y < h; y++) {
-                String[] toks = rawLines[y].trim().split(",");
-                for (int x = 0; x < w; x++) {
-                    out[y][x] = Integer.parseInt(toks[x].trim());
-                }
-            }
-            return out;
         }
+        if (flat.size() != w * h) {
+            throw new IllegalStateException("CSV size mismatch: expected " + (w * h) + " got " + flat.size());
+        }
+
+        int[][] out = new int[h][w];
+        int idx = 0;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                out[y][x] = flat.get(idx++).intValue();
+            }
+        }
+        return out;
     }
 }
