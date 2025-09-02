@@ -2,6 +2,7 @@ package controller;
 
 import agent.AgentController;
 import agent.AgentManager;
+import agent.Rescuer;
 import map.CityMap;
 import map.Hospital;
 import strategy.IAgentDecision;
@@ -10,13 +11,17 @@ import util.CollisionMap;
 import victim.Injured;
 import victim.VictimManager;
 
+import java.util.Collection;
 import java.util.List;
 
-// --------------------
-// لایه: Application Layer
-// --------------------
-// این کلاس وظیفه هماهنگی بین agentها، مجروح‌ها و بیمارستان‌ها رو بر عهده داره
-// از AgentController برای اجرای عملیات استفاده می‌کنه
+/**
+ * --------------------
+ * لایه: Application Layer
+ * --------------------
+ * هماهنگ‌کننده‌ی عملیات نجات بین عامل‌ها، مجروح‌ها و بیمارستان‌ها.
+ * - برای هر Rescuer، لیست جدیدی از قربانیانِ قابل نجات می‌گیرد و به AgentController می‌سپارد.
+ * - هیچ لامبدایی استفاده نشده.
+ */
 public class RescueCoordinator {
 
     private final AgentManager agentManager;
@@ -28,34 +33,29 @@ public class RescueCoordinator {
                              VictimManager victimManager,
                              List<Hospital> hospitals,
                              CityMap map,
-
-
-
                              CollisionMap collisionMap,
-
-
-
                              IPathFinder pathFinder,
                              IAgentDecision decisionLogic) {
 
-        this.agentManager = agentManager;
-        this.victimManager = victimManager;
-        this.hospitals = hospitals;
-
-
-
+        this.agentManager   = agentManager;
+        this.victimManager  = victimManager;
+        this.hospitals      = hospitals;
         this.agentController = new AgentController(map, collisionMap, pathFinder, decisionLogic);
-
-
-
     }
 
-    // اجرای یک دور عملیات نجات برای همه نجات‌دهنده‌ها
-    public void executeRescueCycle() {
-        List<Injured> candidates = victimManager.getRescuableVictims();
+    /** اختیاری: اگر Logger داری، به AgentController پاس بده */
+    public void setLogger(util.Logger logger) {
+        if (this.agentController != null) {
+            this.agentController.setLogger(logger);
+        }
+    }
 
-        agentManager.getAllRescuers().forEach(rescuer ->
-                agentController.performAction(rescuer, candidates, hospitals)
-        );
+    /** اجرای یک دور عملیات نجات */
+    public void executeRescueCycle() {
+        Collection<Rescuer> rescuers = agentManager.getAllRescuers();
+        for (Rescuer r : rescuers) {
+            List<Injured> candidates = victimManager.getRescuableVictims();
+            agentController.performAction(r, candidates, hospitals);
+        }
     }
 }
