@@ -11,15 +11,18 @@ import ui.MiniMapPanel;
 import victim.Injured;
 import victim.VictimManager;
 
-import javax.swing.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.util.ArrayList;
 import java.util.List;
 
-// --------------------
-// لایه: Application Layer
-// --------------------
-// این کلاس چرخه‌ی اصلی بازی رو اجرا می‌کنه
-// عملیات نجات، به‌روزرسانی HUD و UI رو مدیریت می‌کنه
+/**
+ * --------------------
+ * لایه: Application Layer
+ * --------------------
+ * حلقه اصلی: چرخه نجات، تیک تایمر مجروح‌ها، بروزرسانی HUD و UI
+ * بدون استفاده از لامبدا (ActionListener کلاسیک)
+ */
 public class GameEngine {
 
     private final RescueCoordinator rescueCoordinator;
@@ -28,8 +31,9 @@ public class GameEngine {
     private final HUDPanel hudPanel;
     private final GamePanel gamePanel;
     private final MiniMapPanel miniMapPanel;
-    private final ScoreManager scoreManager;
-    private final Timer timer;
+
+    private final javax.swing.Timer gameLoopTimer;
+    private final GameState state;
 
     public GameEngine(GameState state,
                       RescueCoordinator rescueCoordinator,
@@ -37,62 +41,72 @@ public class GameEngine {
                       VictimManager victimManager,
                       HUDPanel hudPanel,
                       GamePanel gamePanel,
-                      MiniMapPanel miniMapPanel,
-                      ScoreManager scoreManager) {
+                      MiniMapPanel miniMapPanel) {
 
+        this.state = state;
         this.rescueCoordinator = rescueCoordinator;
         this.agentManager = agentManager;
         this.victimManager = victimManager;
         this.hudPanel = hudPanel;
         this.gamePanel = gamePanel;
         this.miniMapPanel = miniMapPanel;
-        this.scoreManager = scoreManager;
 
-        // اجرای چرخه بازی هر ۱ ثانیه
-        this.timer = new Timer(1000, e -> updateGame(state.getMap(), state.getHospitals()));
-    }
-
-    public void start() {
-        timer.start();
-    }
-
-    public void stop() {
-        timer.stop();
-    }
-
-    private void updateGame(CityMap map, List<Hospital> hospitals) {
-        // اجرای عملیات نجات
-        rescueCoordinator.executeRescueCycle();
-
-        // به‌روزرسانی وضعیت مجروح‌ها و امتیاز
-        for (Injured injured : victimManager.getAll()) {
-            if (!injured.isDead() && !injured.isRescued()) {
-                injured.getRescueTimer().tick();
-
-                if (injured.getRescueTimer().isFinished()) {
-                    injured.markAsDead();
-                    scoreManager.penalize();
-                }
-            }
-        }
-
-        // بروزرسانی HUD
+        // اطمینان از امتیاز اولیه و نمایش آن از همان شروع
+        ScoreManager.resetToDefault();
         hudPanel.updateHUD(
-                scoreManager.getScore(),
+                ScoreManager.getScore(),
                 (int) victimManager.countRescued(),
                 (int) victimManager.countDead()
         );
 
-        // بروزرسانی نقشه‌ها (تبدیل Collection به List)
-        gamePanel.updateData(
-                map,
-                new ArrayList<>(agentManager.getAllRescuers()),
-                victimManager.getAll()
+        // حلقه بازی هر ۱ ثانیه (1000ms) – بدون لامبدا
+        this.gameLoopTimer = new javax.swing.Timer(1000, new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                updateGame(GameEngine.this.state.getMap(), GameEngine.this.state.getHospitals());
+            }
+        });
+    }
+
+    public void start() {
+        gameLoopTimer.start();
+    }
+
+    public void stop() {
+        gameLoopTimer.stop();
+    }
+
+    private void updateGame(CityMap map, List<Hospital> hospitals) {
+        // 1) چرخه نجات
+        rescueCoordinator.executeRescueCycle();
+
+        // 2) تیک‌زدن تایمر مجروح‌ها + بررسی مرگ
+        List<Injured> victimsSnapshot = victimManager.getAll(); // کپی برای حلقه
+        for (int i = 0; i < victimsSnapshot.size(); i++) {
+            Injured injured = victimsSnapshot.get(i);
+
+            if (!injured.isDead() && !injured.isRescued()) {
+                injured.getRescueTimer().tick();
+
+                if (injured.getRescueTimer().isFinished()) {
+                    // این متد هم markAsDead می‌کند و هم جریمه را طبق 2×زمان اولیه اعمال می‌کند
+                    victimManager.onVictimDead(injured);
+                }
+            }
+        }
+
+        // 3) HUD با Score واقعی (جهانی)
+        hudPanel.updateHUD(
+                ScoreManager.getScore(),
+                (int) victimManager.countRescued(),
+                (int) victimManager.countDead()
         );
-        miniMapPanel.updateMiniMap(
-                map,
-                new ArrayList<>(agentManager.getAllRescuers()),
-                victimManager.getAll()
-        );
+
+        // 4) رندر پنل‌ها
+        List<Rescuer> rescuers = new ArrayList<Rescuer>(agentManager.getAllRescuers());
+        List<Injured> victimsForRender = victimManager.getAll();
+
+        gamePanel.updateData(map, rescuers, victimsForRender);
+        miniMapPanel.updateMiniMap(map, rescuers, victimsForRender);
     }
 }

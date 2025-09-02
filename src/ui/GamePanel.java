@@ -179,6 +179,7 @@ public class GamePanel extends JPanel {
                     case LOW: col = Color.YELLOW; break;
                     case MEDIUM: col = Color.ORANGE; break;
                     case CRITICAL: col = Color.RED; break;
+                    default: break;
                 }
                 g.setColor(col);
                 int r = tileSize / 2;
@@ -190,19 +191,24 @@ public class GamePanel extends JPanel {
         }
     }
 
+    /** HUD شمارش‌معکوس بالای سر هر مجروح: متن هم‌رنگ با وضعیت (سبز/زرد/قرمز) + دورنویسی مشکی. */
     private void drawVictimTimerHUD(Graphics2D g2, Injured inj, int baseX, int baseY, int spriteW) {
         int barWidth = (int) (tileSize * 0.9);
         int barHeight = Math.max(6, (int) (tileSize * 0.18));
         int x = baseX + (tileSize - barWidth) / 2;
         int y = baseY - 6;
 
+        // پس‌زمینهٔ نوار
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g2.setColor(new Color(0, 0, 0, 140));
         g2.fillRoundRect(x, y - barHeight, barWidth, barHeight, 6, 6);
 
+        // درصد باقیمانده
         float pct = inj.getTimePercent();
         pct = Math.max(0f, Math.min(1f, pct));
         int filled = (int) (barWidth * pct);
 
+        // رنگ نوار: سبز→زرد→قرمز
         Color fill;
         if (pct > 0.6f) fill = new Color(50, 205, 50);
         else if (pct > 0.3f) fill = new Color(255, 193, 7);
@@ -211,7 +217,7 @@ public class GamePanel extends JPanel {
         g2.setColor(fill);
         g2.fillRoundRect(x+1, y - barHeight + 1, Math.max(0, filled - 2), barHeight - 2, 6, 6);
 
-        // ✅ فونت بزرگ‌تر
+        // متن ثانیهٔ باقی‌مانده (بزرگ‌تر + هم‌رنگ با وضعیت)
         String txt = String.valueOf(Math.max(0, inj.getRemainingTime()));
         Font old = g2.getFont();
         Font f = old.deriveFont(Font.BOLD, Math.max(14f, tileSize * 0.6f));
@@ -220,13 +226,19 @@ public class GamePanel extends JPanel {
         FontMetrics fm = g2.getFontMetrics();
         int tw = fm.stringWidth(txt);
         int th = fm.getAscent();
+        int tx = x + (barWidth - tw) / 2;
+        int ty = y - barHeight/2 + th/2;
 
-        g2.setColor(new Color(0, 0, 0, 180));
-        g2.drawString(txt, x + (barWidth - tw) / 2 + 1, y - barHeight/2 + th/2);
-        g2.setColor(Color.WHITE);
-        g2.drawString(txt, x + (barWidth - tw) / 2,     y - barHeight/2 + th/2);
+        // دورنویسی مشکی برای خوانایی روی هر پس‌زمینه
+        g2.setColor(new Color(0, 0, 0, 200));
+        g2.drawString(txt, tx + 1, ty + 1);
+
+        // رنگ متن مطابق وضعیت
+        g2.setColor(fill);
+        g2.drawString(txt, tx, ty);
 
         g2.setFont(old);
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
     }
 
     private void drawRescuers(Graphics2D g2) {

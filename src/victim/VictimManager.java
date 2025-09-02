@@ -1,60 +1,95 @@
 package victim;
 
+import controller.ScoreManager;
+
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
-// --------------------
-// لایه: Domain Layer
-// --------------------
-// این کلاس مسئول مدیریت لیست تمام مجروح‌هاست
-// می‌تونه اضافه کنه، لیست بده، یا مجروح‌های قابل نجات رو فیلتر کنه
+/**
+ * --------------------
+ * لایه: Domain Layer
+ * --------------------
+ * مدیریت لیست مجروح‌ها + اعمال جریمه/پاداش از طریق ScoreManager (سراسری).
+ */
 public class VictimManager {
 
     private final List<Injured> injuredList;
 
     public VictimManager() {
-        this.injuredList = new ArrayList<>();
+        this.injuredList = new ArrayList<Injured>();
     }
 
-    // اضافه کردن مجروح جدید به لیست
+    // اضافه کردن مجروح
     public void addInjured(Injured injured) {
         injuredList.add(injured);
     }
 
-    // گرفتن تمام مجروح‌ها
+    // همهٔ مجروح‌ها (کپی)
     public List<Injured> getAll() {
-        return new ArrayList<>(injuredList); // کپی برای جلوگیری از تغییر مستقیم
+        return new ArrayList<Injured>(injuredList);
     }
 
-    // گرفتن مجروح‌های قابل نجات (هنوز نمردن یا نجات داده نشدن)
+    // مجروح‌های قابل نجات (بدون Stream)
     public List<Injured> getRescuableVictims() {
-        return injuredList.stream()
-                .filter(Injured::canBeRescued)
-                .collect(Collectors.toList());
+        List<Injured> out = new ArrayList<Injured>();
+        for (int i = 0; i < injuredList.size(); i++) {
+            Injured v = injuredList.get(i);
+            if (v.canBeRescued()) {
+                out.add(v);
+            }
+        }
+        return out;
     }
 
-    // گرفتن مجروح خاص با ID
+    // جستجوی ID
     public Injured getById(int id) {
-        for (Injured i : injuredList) {
-            if (i.getId() == id)
-                return i;
+        for (int i = 0; i < injuredList.size(); i++) {
+            Injured v = injuredList.get(i);
+            if (v.getId() == id) return v;
         }
         return null;
     }
 
-    // حذف همه مجروح‌ها (مثلاً ریست بازی)
+    // پاک‌سازی
     public void clear() {
         injuredList.clear();
     }
 
-    // شمارش مجروح‌های مرده
+    // شمارش‌ها (بدون Stream)
     public long countDead() {
-        return injuredList.stream().filter(Injured::isDead).count();
+        long c = 0;
+        for (int i = 0; i < injuredList.size(); i++) {
+            if (injuredList.get(i).isDead()) c++;
+        }
+        return c;
     }
 
-    // شمارش مجروح‌های نجات‌داده‌شده
     public long countRescued() {
-        return injuredList.stream().filter(Injured::isRescued).count();
+        long c = 0;
+        for (int i = 0; i < injuredList.size(); i++) {
+            if (injuredList.get(i).isRescued()) c++;
+        }
+        return c;
+    }
+
+    // -------------------- هماهنگی با امتیاز --------------------
+
+    /** اعلام مرگ یک مجروح: هم وضعیت، هم جریمه اعمال می‌شود. */
+    public void onVictimDead(Injured injured) {
+        if (injured == null) return;
+        if (!injured.isDead() && !injured.isRescued()) {
+            injured.markAsDead(); // ناپدیدشدن در خود Injured هندل شود
+            ScoreManager.applyDeathPenalty(injured); // 2×زمان اولیه (سراسری)
+        }
+    }
+
+    /** اعلام نجات یک مجروح: وضعیت نجات + (اختیاری) پاداش */
+    public void onVictimRescued(Injured injured) {
+        if (injured == null) return;
+        if (!injured.isDead() && !injured.isRescued()) {
+            injured.markAsRescued();
+            // اگر پاداش لازم داری، این خط را باز کن:
+            // ScoreManager.addRescueRewardBySeverity(injured.getSeverity());
+        }
     }
 }

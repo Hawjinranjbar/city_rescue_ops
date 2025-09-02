@@ -10,6 +10,8 @@ import util.Timer;
  * نمایندهٔ یک مجروح روی نقشه:
  * - موقعیت، شدت جراحت، تایمر نجات
  * - وضعیت‌ها: نجات‌شده / مرده / در حال نجات
+ * - پشتیبانی از ناپدید شدن پس از مرگ/نجات (visible=false)
+ * - نگهداری "زمان اولیهٔ تایمر" برای محاسبهٔ جریمهٔ مرگ (۲×زمان اولیه)
  */
 public class Injured {
 
@@ -18,24 +20,28 @@ public class Injured {
     private static final int TIME_MEDIUM_DEFAULT   = 120;
     private static final int TIME_CRITICAL_DEFAULT = 60;
 
-    private final int id;                 // شناسه یکتا
-    private final Position position;      // مختصات روی نقشه
-    private final InjurySeverity severity;// شدت جراحت
-    private final Timer rescueTimer;      // تایمر فرصت نجات
+    private final int id;                  // شناسه یکتا
+    private final Position position;       // مختصات روی نقشه
+    private final InjurySeverity severity; // شدت جراحت
+    private final Timer rescueTimer;       // تایمر فرصت نجات
+    private final int initialTimeLimit;    // زمان اولیهٔ تایمر (برای HUD/جریمه)
 
-    private boolean isRescued;            // آیا نجات داده شده؟
-    private boolean isDead;               // آیا مرده؟
-    private boolean beingRescued;         // آیا در حال عملیات نجات است؟
+    private boolean isRescued;             // آیا نجات داده شده؟
+    private boolean isDead;                // آیا مرده؟
+    private boolean beingRescued;          // آیا در حال عملیات نجات است؟
+    private boolean visible;               // کنترل رندر (بعد از مرگ/نجات false)
 
     // --- سازنده با زمان مشخص ---
     public Injured(int id, Position position, InjurySeverity severity, int timeLimit) {
         this.id = id;
         this.position = position;
         this.severity = severity;
-        this.rescueTimer = new Timer(timeLimit);
+        this.initialTimeLimit = timeLimit > 0 ? timeLimit : defaultTimeFor(severity);
+        this.rescueTimer = new Timer(this.initialTimeLimit);
         this.isRescued = false;
         this.isDead = false;
         this.beingRescued = false;
+        this.visible = true;
     }
 
     // --- سازنده با زمان پیش‌فرض بر اساس شدت ---
@@ -50,18 +56,21 @@ public class Injured {
     }
 
     // ===================== تایمر =====================
-    /** کاهش یک تیک از تایمر */
+    /** کاهش یک تیک از تایمر (برای رفرش HUD یا منطق گیم‌لوپ) */
     public void tick() {
         if (isRescued || isDead) return;
         rescueTimer.tick();
     }
 
-    /** اگر زمان تمام شد و نجات داده نشده بود، او را مرده می‌کند. */
+    /**
+     * یک تیک کم می‌کند و اگر زمان تمام شده باشد، مجروح را "مرده" علامت می‌زند.
+     * @return اگر همین حالا به مرگ رسید، true
+     */
     public boolean updateAndCheckDeath() {
         if (isRescued || isDead) return false;
         rescueTimer.tick();
         if (rescueTimer.isFinished()) {
-            markAsDead();
+            markAsDead(); // ناپدید هم می‌شود
             return true;
         }
         return false;
@@ -73,11 +82,16 @@ public class Injured {
     public InjurySeverity getSeverity() { return severity; }
     public Timer getRescueTimer() { return rescueTimer; }
 
+    /** باقیماندهٔ زمان (ثانیه/تیک) */
     public int getRemainingTime() { return rescueTimer.getRemainingTime(); }
 
+    /** زمان اولیهٔ تایمر (برای HUD و محاسبهٔ جریمه) */
+    public int getInitialTimeLimit() { return initialTimeLimit; }
+
+    /** درصد زمان باقی‌مانده نسبت به زمان اولیه (۰..۱) */
     public float getTimePercent() {
         int rem = rescueTimer.getRemainingTime();
-        int total = defaultTimeFor(severity);
+        int total = initialTimeLimit;
         if (total <= 0) return 0f;
         if (rem <= 0) return 0f;
         if (rem >= total) return 1f;
@@ -89,19 +103,35 @@ public class Injured {
     public boolean isDead() { return isDead; }
     public boolean isBeingRescued() { return beingRescued; }
     public void setBeingRescued(boolean beingRescued) { this.beingRescued = beingRescued; }
+    public boolean isVisible() { return visible; }
 
+    /** علامت‌گذاری به‌عنوان نجات‌یافته + ناپدید شدن از صحنه */
     public void markAsRescued() {
         if (isDead) return;
         isRescued = true;
         beingRescued = false;
+        visible = false;     // ناپدید شود
         rescueTimer.stop();
     }
 
+    /** علامت‌گذاری به‌عنوان مرده + ناپدید شدن از صحنه */
     public void markAsDead() {
         if (isRescued) return;
         isDead = true;
         beingRescued = false;
+        visible = false;     // ناپدید شود
         rescueTimer.stop();
+    }
+
+    // ===================== محاسبات امتیاز =====================
+    /**
+     * جریمهٔ مرگ بر مبنای قانون پروژه:
+     * penalty = 2 × initialTimeLimit
+     */
+    public int getDeathPenalty() {
+        int base = initialTimeLimit;
+        if (base < 0) base = 0;
+        return 2 * base;
     }
 
     // ===================== منطق انتخاب =====================

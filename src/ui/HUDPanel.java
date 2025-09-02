@@ -3,11 +3,10 @@ package ui;
 import javax.swing.*;
 import java.awt.*;
 
-// --------------------
-// لایه: ui Layer
-// --------------------
-// این پنل برای نمایش اطلاعات HUD بازیه:
-// مثل امتیاز، نجات‌یافته‌ها، مرده‌ها و...
+/**
+ * لایه: UI Layer
+ * پنل HUD: نمایش امتیاز، نجات‌یافته‌ها، مرده‌ها
+ */
 public class HUDPanel extends JPanel {
 
     private int score;
@@ -15,20 +14,26 @@ public class HUDPanel extends JPanel {
     private int deadCount;
 
     public HUDPanel() {
-        setPreferredSize(new Dimension(200, 100));
+        setPreferredSize(new Dimension(240, 110));
         setBackground(Color.BLACK);
         setForeground(Color.WHITE);
+        // مقدار اولیه فقط برای نمای اولیه؛ بعداً از GameEngine سینک می‌شود
+        this.score = 500;
+        this.rescuedCount = 0;
+        this.deadCount = 0;
     }
 
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
-
         g.setColor(getForeground());
-        g.setFont(new Font("Arial", Font.BOLD, 16));
-        g.drawString("امتیاز: " + score, 10, 25);
-        g.drawString("نجات‌یافته‌ها: " + rescuedCount, 10, 50);
-        g.drawString("مرده‌ها: " + deadCount, 10, 75);
+
+        g.setFont(new Font("Arial", Font.BOLD, 20));
+        g.drawString("امتیاز: " + score, 12, 30);
+
+        g.setFont(new Font("Arial", Font.PLAIN, 16));
+        g.drawString("نجات‌یافته‌ها: " + rescuedCount, 12, 60);
+        g.drawString("مرده‌ها: " + deadCount, 12, 85);
     }
 
     public void updateHUD(int score, int rescued, int dead) {
