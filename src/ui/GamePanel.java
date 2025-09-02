@@ -19,11 +19,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * --------------------
- * لایه: UI Layer
- * --------------------
- * پنل رندرِ بازی: نقشه، نجات‌دهنده‌ها و مجروح‌ها + اورلی دیباگ و گرید.
- * مختصات، تایل‌محور است.
+ * پنل رندر بازی: فقط نقشه، نجات‌دهنده‌ها و مجروح‌ها.
+ * ــ بدون Vehicle ــ
  */
 public class GamePanel extends JPanel {
 
@@ -31,43 +28,38 @@ public class GamePanel extends JPanel {
     private CityMap cityMap;
     private List<Rescuer> rescuers;
     private List<Injured> victims;
-    private final Map<InjurySeverity, BufferedImage> victimSprites = new EnumMap<>(InjurySeverity.class);
+    private final Map<InjurySeverity, BufferedImage> victimSprites =
+            new EnumMap<InjurySeverity, BufferedImage>(InjurySeverity.class);
 
     // ---- تنظیمات نمایش ----
-    private int tileSize = 32;             // اندازه‌ی رسم هر تایل روی صفحه
-    private boolean drawGrid = false;      // نمایش خطوط شبکه
-    private double rescuerScale = 2.0;     // بزرگ‌نمایی فقط برای Rescuer
-    private boolean debugWalkable = false; // اورلی دیباگ: سبز/قرمز (walkable/occupied)
+    private int tileSize = 32;
+    private boolean drawGrid = false;
+    private double rescuerScale = 2.0;
+    private double victimScale  = 3.0;
+    private boolean debugWalkable = false;
+
+    // Alignment برای Victim
+    private int victimXOffset = 0;
+    private int victimYOffset = 0;
 
     // ---- Viewport ----
-    private int viewX = 0;                 // مختصات تایل بالا-چپ ویوپورت
-    private int viewY = 0;
-    private int viewWidth;                 // عرض ویوپورت بر حسب تعداد تایل
-    private int viewHeight;                // ارتفاع ویوپورت بر حسب تعداد تایل
+    private int viewX = 0, viewY = 0;
+    private int viewWidth = 1, viewHeight = 1;
 
-    // ---- سازنده ----
     public GamePanel(CityMap cityMap, List<Rescuer> rescuers, List<Injured> victims) {
         this.cityMap = cityMap;
         this.rescuers = rescuers;
         this.victims = victims;
 
-        // اندازه اولیهٔ ویوپورت بر اساس اندازهٔ پنل در زمان اجرا تنظیم می‌شود
-        this.viewWidth = 1;
-        this.viewHeight = 1;
-
-
-
         if (cityMap != null) {
-            this.viewWidth = Math.max(1, cityMap.getWidth() / 2);
+            this.viewWidth  = Math.max(1, cityMap.getWidth() / 2);
             this.viewHeight = Math.max(1, cityMap.getHeight() / 2);
-            setPreferredSize(new Dimension(viewWidth * tileSize,
-                    viewHeight * tileSize));
+            setPreferredSize(new Dimension(viewWidth * tileSize, viewHeight * tileSize));
         } else {
-            this.viewWidth = 25; // مقادیر پیش‌فرض اگر نقشه‌ای موجود نباشد
+            this.viewWidth = 25;
             this.viewHeight = 19;
-            setPreferredSize(new Dimension(viewWidth * tileSize,
-                    viewHeight * tileSize));}
-
+            setPreferredSize(new Dimension(viewWidth * tileSize, viewHeight * tileSize));
+        }
 
         setFocusable(true);
         requestFocusInWindow();
@@ -76,75 +68,57 @@ public class GamePanel extends JPanel {
         loadVictimSprites();
 
         addComponentListener(new ComponentAdapter() {
-            @Override
-            public void componentResized(ComponentEvent e) {
+            @Override public void componentResized(ComponentEvent e) {
                 updateViewportSize();
             }
         });
     }
 
+    /** لود اسپرایت مجروح‌ها (PNG شفاف) با اسکیل ثابت؛ بدون Vehicle. */
     private void loadVictimSprites() {
+        int w = (int) Math.round(tileSize * victimScale);
+        int h = w;
+        victimSprites.clear();
         victimSprites.put(InjurySeverity.LOW,
-                AssetLoader.loadScaled("assets/characters/LOW.png", tileSize, tileSize));
+                AssetLoader.loadScaled("assets/characters/LOW.png", w, h));
         victimSprites.put(InjurySeverity.MEDIUM,
-                AssetLoader.loadScaled("assets/characters/MEDIUM.png", tileSize, tileSize));
+                AssetLoader.loadScaled("assets/characters/MEDIUM.png", w, h));
         victimSprites.put(InjurySeverity.CRITICAL,
-                AssetLoader.loadScaled("assets/characters/CRITICAL.png", tileSize, tileSize));
+                AssetLoader.loadScaled("assets/characters/CRITICAL.png", w, h));
     }
 
-    // ---------------------- رندر اصلی ----------------------
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
 
-        // پس‌زمینه
         g.setColor(new Color(200, 200, 200));
         g.fillRect(0, 0, getWidth(), getHeight());
 
         if (cityMap == null) return;
 
         updateViewportSize();
-
         updateViewport();
 
         Graphics2D gWorld = (Graphics2D) g.create();
         gWorld.translate(-viewX * tileSize, -viewY * tileSize);
 
         drawMap(gWorld);
+        drawVictims(gWorld);
+        drawRescuers(gWorld);
 
-        if (victims != null) {
-            drawVictims(gWorld);
-        }
-
-        if (rescuers != null) {
-            Graphics2D g2 = (Graphics2D) gWorld.create();
-            g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
-            drawRescuers(g2);
-            g2.dispose();
-        }
-
-        if (debugWalkable) {
-            drawWalkableOverlay(gWorld);
-        }
-
-        if (drawGrid) {
-            drawGridLines(gWorld);
-        }
+        if (debugWalkable) drawWalkableOverlay(gWorld);
+        if (drawGrid) drawGridLines(gWorld);
 
         gWorld.dispose();
     }
-
-    // ---------------------- متدهای رندر ----------------------
 
     private void updateViewportSize() {
         if (cityMap == null) return;
         int tilesW = Math.max(1, getWidth() / tileSize);
         int tilesH = Math.max(1, getHeight() / tileSize);
-        viewWidth = Math.min(cityMap.getWidth(), tilesW);
+        viewWidth  = Math.min(cityMap.getWidth(), tilesW);
         viewHeight = Math.min(cityMap.getHeight(), tilesH);
     }
-
 
     private void updateViewport() {
         if (cityMap == null || rescuers == null || rescuers.isEmpty()) return;
@@ -165,15 +139,12 @@ public class GamePanel extends JPanel {
     }
 
     private void drawMap(Graphics g) {
-        int startY = viewY;
-        int endY = Math.min(cityMap.getHeight(), viewY + viewHeight);
-        int startX = viewX;
-        int endX = Math.min(cityMap.getWidth(), viewX + viewWidth);
+        int startY = viewY, endY = Math.min(cityMap.getHeight(), viewY + viewHeight);
+        int startX = viewX, endX = Math.min(cityMap.getWidth(), viewX + viewWidth);
         for (int y = startY; y < endY; y++) {
             for (int x = startX; x < endX; x++) {
                 Cell cell = cityMap.getCell(x, y);
                 if (cell == null) continue;
-
                 BufferedImage tileImg = cell.getImage();
                 if (tileImg != null) {
                     g.drawImage(tileImg, x * tileSize, y * tileSize, tileSize, tileSize, null);
@@ -186,37 +157,44 @@ public class GamePanel extends JPanel {
     }
 
     private void drawVictims(Graphics g) {
-        for (Injured inj : victims) {
+        if (victims == null) return;
+        for (int i = 0; i < victims.size(); i++) {
+            Injured inj = victims.get(i);
             if (inj == null || inj.isDead() || inj.isRescued()) continue;
-
             Position p = inj.getPosition();
             if (p == null) continue;
+
             if (p.getX() < viewX || p.getX() >= viewX + viewWidth ||
                     p.getY() < viewY || p.getY() >= viewY + viewHeight) continue;
 
             BufferedImage sprite = victimSprites.get(inj.getSeverity());
             if (sprite != null) {
-                int drawX = p.getX() * tileSize + (tileSize - sprite.getWidth()) / 2;
-                int drawY = p.getY() * tileSize + (tileSize - sprite.getHeight());
+                int baseX = p.getX() * tileSize;
+                int baseY = p.getY() * tileSize;
+                int drawX = baseX + (tileSize - sprite.getWidth()) / 2 + victimXOffset;
+                int drawY = baseY + (tileSize - sprite.getHeight()) + victimYOffset;
                 g.drawImage(sprite, drawX, drawY, null);
             } else {
-                Color col;
-                InjurySeverity sev = inj.getSeverity();
-                if (sev == InjurySeverity.LOW) col = Color.YELLOW;
-                else if (sev == InjurySeverity.MEDIUM) col = Color.ORANGE;
-                else col = Color.RED; // CRITICAL
-
+                // fallback رنگی
+                Color col = Color.RED;
+                switch (inj.getSeverity()) {
+                    case LOW: col = Color.YELLOW; break;
+                    case MEDIUM: col = Color.ORANGE; break;
+                    case CRITICAL: col = Color.RED; break;
+                }
                 g.setColor(col);
                 int r = tileSize / 2;
-                int cx = p.getX() * tileSize + (tileSize - r) / 2;
-                int cy = p.getY() * tileSize + (tileSize - r) / 2;
+                int cx = p.getX() * tileSize + (tileSize - r) / 2 + victimXOffset;
+                int cy = p.getY() * tileSize + (tileSize - r) / 2 + victimYOffset;
                 g.fillOval(cx, cy, r, r);
             }
         }
     }
 
     private void drawRescuers(Graphics2D g2) {
-        for (Rescuer r : rescuers) {
+        if (rescuers == null) return;
+        for (int i = 0; i < rescuers.size(); i++) {
+            Rescuer r = rescuers.get(i);
             if (r == null || r.getPosition() == null) continue;
 
             Position pos = r.getPosition();
@@ -228,13 +206,11 @@ public class GamePanel extends JPanel {
             int size = (int) Math.round(tileSize * rescuerScale);
 
             Image sprite = r.getSpriteScaled(size);
+            int drawX = baseX + (tileSize - size) / 2;
+            int drawY = baseY + (tileSize - size);
 
-            int drawX = baseX + (tileSize - size) / 2; // وسط‌چین افقی
-            int drawY = baseY + (tileSize - size);     // تکیه به کف سلول (پا روی زمین)
-
-            if (sprite != null) {
-                g2.drawImage(sprite, drawX, drawY, size, size, null);
-            } else {
+            if (sprite != null) g2.drawImage(sprite, drawX, drawY, size, size, null);
+            else {
                 g2.setColor(new Color(0, 70, 200));
                 g2.fillRect(drawX, drawY, size, size);
             }
@@ -244,18 +220,14 @@ public class GamePanel extends JPanel {
     private void drawWalkableOverlay(Graphics g) {
         Graphics2D gg = (Graphics2D) g.create();
         gg.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.25f));
-        int startY = viewY;
-        int endY = Math.min(cityMap.getHeight(), viewY + viewHeight);
-        int startX = viewX;
-        int endX = Math.min(cityMap.getWidth(), viewX + viewWidth);
+        int startY = viewY, endY = Math.min(cityMap.getHeight(), viewY + viewHeight);
+        int startX = viewX, endX = Math.min(cityMap.getWidth(), viewX + viewWidth);
         for (int y = startY; y < endY; y++) {
             for (int x = startX; x < endX; x++) {
                 Cell c = cityMap.getCell(x, y);
                 if (c == null) continue;
-                int px = x * tileSize;
-                int py = y * tileSize;
-                if (c.isWalkable() && !c.isOccupied()) gg.setColor(Color.GREEN);
-                else gg.setColor(Color.RED);
+                int px = x * tileSize, py = y * tileSize;
+                gg.setColor((c.isWalkable() && !c.isOccupied()) ? Color.GREEN : Color.RED);
                 gg.fillRect(px, py, tileSize, tileSize);
             }
         }
@@ -264,25 +236,21 @@ public class GamePanel extends JPanel {
 
     private void drawGridLines(Graphics g) {
         g.setColor(new Color(0, 0, 0, 40));
-        int startX = viewX * tileSize;
-        int endX = (viewX + viewWidth) * tileSize;
-        int startY = viewY * tileSize;
-        int endY = (viewY + viewHeight) * tileSize;
-
+        int startX = viewX * tileSize, endX = (viewX + viewWidth) * tileSize;
+        int startY = viewY * tileSize, endY = (viewY + viewHeight) * tileSize;
         for (int x = startX; x <= endX; x += tileSize) g.drawLine(x, startY, x, endY);
         for (int y = startY; y <= endY; y += tileSize) g.drawLine(startX, y, endX, y);
     }
 
-    // ---------------------- Setter / Update ----------------------
+    // ---------- Setter / Update ----------
     public void updateData(CityMap cityMap, List<Rescuer> rescuers, List<Injured> victims) {
         this.cityMap = cityMap;
         this.rescuers = rescuers;
         this.victims = victims;
         if (cityMap != null) {
-            this.viewWidth = Math.max(1, cityMap.getWidth() / 2);
+            this.viewWidth  = Math.max(1, cityMap.getWidth() / 2);
             this.viewHeight = Math.max(1, cityMap.getHeight() / 2);
-            setPreferredSize(new Dimension(viewWidth * tileSize,
-                    viewHeight * tileSize));
+            setPreferredSize(new Dimension(viewWidth * tileSize, viewHeight * tileSize));
         }
         updateViewport();
         revalidate();
@@ -292,53 +260,18 @@ public class GamePanel extends JPanel {
     public void setTileSize(int tileSize) {
         if (tileSize <= 0) return;
         this.tileSize = tileSize;
-        if (cityMap != null) {
-            setPreferredSize(new Dimension(viewWidth * tileSize,
-                    viewHeight * tileSize));
-        }
+        if (cityMap != null) setPreferredSize(new Dimension(viewWidth * tileSize, viewHeight * tileSize));
         loadVictimSprites();
         revalidate();
         repaint();
     }
 
-    public void setRescuerScale(double scale) {
-        if (scale > 0) {
-            this.rescuerScale = scale;
-            repaint();
-        }
-    }
-
-    public void setDebugWalkable(boolean on) {
-        this.debugWalkable = on;
-        repaint();
-    }
-
-    public void setDrawGrid(boolean drawGrid) {
-        this.drawGrid = drawGrid;
-        repaint();
-    }
-
-    public void setMap(CityMap cityMap) {
-        this.cityMap = cityMap;
-        if (cityMap != null) {
-            this.viewWidth = Math.max(1, cityMap.getWidth() / 2);
-            this.viewHeight = Math.max(1, cityMap.getHeight() / 2);
-            setPreferredSize(new Dimension(viewWidth * tileSize,
-                    viewHeight * tileSize));
-        }
-        updateViewport();
-        revalidate();
-        repaint();
-    }
-
-    public void setRescuers(List<Rescuer> rescuers) {
-        this.rescuers = rescuers;
-        updateViewport();
-        repaint();
-    }
-
-    public void setVictims(List<Injured> victims) {
-        this.victims = victims;
-        repaint();
-    }
+    public void setRescuerScale(double scale) { if (scale > 0) { this.rescuerScale = scale; repaint(); } }
+    public void setVictimScale(double scale)  { if (scale > 0) { this.victimScale  = scale; loadVictimSprites(); repaint(); } }
+    public void setVictimOffset(int xOffset, int yOffset) { this.victimXOffset = xOffset; this.victimYOffset = yOffset; repaint(); }
+    public void setDebugWalkable(boolean on) { this.debugWalkable = on; repaint(); }
+    public void setDrawGrid(boolean drawGrid) { this.drawGrid = drawGrid; repaint(); }
+    public void setMap(CityMap cityMap) { this.cityMap = cityMap; updateViewport(); revalidate(); repaint(); }
+    public void setRescuers(List<Rescuer> rescuers) { this.rescuers = rescuers; updateViewport(); repaint(); }
+    public void setVictims(List<Injured> victims) { this.victims = victims; repaint(); }
 }

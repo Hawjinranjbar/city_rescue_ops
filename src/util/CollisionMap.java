@@ -7,22 +7,28 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.*;
 
 /**
  * --------------------
  * لایه: Utility Layer
  * --------------------
- * نگاشت برخورد تایل‌محور که می‌تواند از فایل TMX (property‌ی به نام
- * <code>walkable=true</code>) یا از ماسک سیاه/سفید (PNG) ساخته شود.
- * پیکسل‌های سفید یا tileهایی که property <code>walkable</code> دارند قابل عبور فرض می‌شوند.
+ * نگاشت برخورد تایل‌محور.
+ *
+ * قراردادها:
+ *  - در لایه‌های باینری CSV (مثلاً CollisionLayer_Vehicle): مقدار 0 = قابل عبور، مقدار 1 = مسدود.
+ *  - isWalkable(x,y) => true اگر تایل قابل عبور باشد.
+ *  - isBlocked(x,y)  => true اگر تایل خارج از نقشه یا مسدود باشد.
  */
-public class CollisionMap {
+public final class CollisionMap {
 
     private final int width;
     private final int height;
-    private final boolean[][] walkable; // walkable[y][x]
+    // walkable[y][x] = true => عبوری
+    private final boolean[][] walkable;
+
+    public int getWidth()  { return width; }
+    public int getHeight() { return height; }
 
     private CollisionMap(int width, int height) {
         this.width = width;
@@ -30,15 +36,134 @@ public class CollisionMap {
         this.walkable = new boolean[height][width];
     }
 
-    /** آیا مختصات تایل‌محور (x,y) قابل عبور است؟ */
+    /** آیا مختصات تایل‌محور (x,y) قابل عبور است؟  خارج مرز => false */
     public boolean isWalkable(int x, int y) {
         if (x < 0 || y < 0 || x >= width || y >= height) return false;
         return walkable[y][x];
     }
 
+    /** آیا مختصات تایل‌محور (x,y) مسدود است؟  خارج مرز => true */
+    public boolean isBlocked(int x, int y) {
+        return !isWalkable(x, y);
+    }
+
+    /** تنظیم عبوری/مسدود بودن برحسب "blocked". */
+    public void set(int x, int y, boolean blocked) {
+        if (x < 0 || y < 0 || x >= width || y >= height) return;
+        walkable[y][x] = !blocked;
+    }
+
+    /** صراحتاً ستِ عبوری. */
+    public void setWalkable(int x, int y, boolean canPass) {
+        if (x < 0 || y < 0 || x >= width || y >= height) return;
+        walkable[y][x] = canPass;
+    }
+
+    /* =========================
+       1) ساخت از لایه‌ی باینری CSV در TMX
+       ========================= */
+
     /**
-     * ساخت CollisionMap از فایل TMX. برای هر تایل، property ای با نام
-     * "walkable" اگر مقدار "true" داشته باشد آن سلول قابل عبور است.
+     * یک لایه‌ی CSV با name مشخص را از TMX می‌خواند.
+     * قرارداد: 0 = عبوری، غیر صفر = مسدود.
+     */
+    public static CollisionMap fromBinaryLayer(String tmxPath, String layerName) {
+        try {
+            Document doc = parseXML(tmxPath);
+            Element map = (Element) doc.getElementsByTagName("map").item(0);
+            int w = Integer.parseInt(map.getAttribute("width"));
+            int h = Integer.parseInt(map.getAttribute("height"));
+            CollisionMap cm = new CollisionMap(w, h);
+
+            Element layer = findLayerByName(doc, layerName);
+            if (layer == null) {
+                throw new IllegalStateException("Layer not found: " + layerName);
+            }
+            Element data = (Element) layer.getElementsByTagName("data").item(0);
+            String encoding = data.getAttribute("encoding");
+            if (!"csv".equalsIgnoreCase(encoding)) {
+                throw new IllegalStateException("Only CSV encoding is supported for layer: " + layerName);
+            }
+
+            int[][] vals = readCsvGrid(data.getTextContent(), w, h);
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    int v = vals[y][x];
+                    cm.set(x, y, v != 0); // 0 => عبوری, غیر صفر => مسدود
+                }
+            }
+            return cm;
+        } catch (Exception ex) {
+            throw new RuntimeException("fromBinaryLayer failed: " + ex.getMessage(), ex);
+        }
+    }
+
+    /* =========================
+       2) ساخت از چند لایه‌ی تایل در TMX (غیر باینری)
+       ========================= */
+
+    /**
+     * لایه‌هایی که باید "عبوری" باشند و لایه‌هایی که باید "مسدود" باشند را ترکیب می‌کند.
+     * هرجایی که در blockedLayers GID!=0 باشد، خروجی را مسدود می‌کند (ارجحیت با مسدود است).
+     * هرجایی که در walkableLayers GID!=0 باشد، خروجی را عبوری می‌کند (اگر در blocked هم بود، مسدود می‌ماند).
+     * اگر هر دو لیست خالی باشند، خروجی همه‌جا "مسدود" خواهد بود.
+     */
+    public static CollisionMap fromTMX(String tmxPath,
+                                       List<String> walkableLayers,
+                                       List<String> blockedLayers) {
+        try {
+            Document doc = parseXML(tmxPath);
+            Element map = (Element) doc.getElementsByTagName("map").item(0);
+            int w = Integer.parseInt(map.getAttribute("width"));
+            int h = Integer.parseInt(map.getAttribute("height"));
+            CollisionMap cm = new CollisionMap(w, h);
+
+            // پیش‌فرض: همه غیرعبوری
+            for (int y = 0; y < h; y++) Arrays.fill(cm.walkable[y], false);
+
+            // 2-1) عبوری‌ها
+            for (String ln : (walkableLayers == null ? Collections.<String>emptyList() : walkableLayers)) {
+                Element layer = findLayerByName(doc, ln);
+                if (layer == null) continue;
+                Element data = (Element) layer.getElementsByTagName("data").item(0);
+                if (!"csv".equalsIgnoreCase(data.getAttribute("encoding")))
+                    throw new IllegalStateException("Only CSV encoding supported for: " + ln);
+                int[][] vals = readCsvGrid(data.getTextContent(), w, h);
+                for (int y = 0; y < h; y++) {
+                    for (int x = 0; x < w; x++) {
+                        if (vals[y][x] != 0) cm.setWalkable(x, y, true);
+                    }
+                }
+            }
+
+            // 2-2) مسدودی‌ها (ارجحیت)
+            for (String ln : (blockedLayers == null ? Collections.<String>emptyList() : blockedLayers)) {
+                Element layer = findLayerByName(doc, ln);
+                if (layer == null) continue;
+                Element data = (Element) layer.getElementsByTagName("data").item(0);
+                if (!"csv".equalsIgnoreCase(data.getAttribute("encoding")))
+                    throw new IllegalStateException("Only CSV encoding supported for: " + ln);
+                int[][] vals = readCsvGrid(data.getTextContent(), w, h);
+                for (int y = 0; y < h; y++) {
+                    for (int x = 0; x < w; x++) {
+                        if (vals[y][x] != 0) cm.set(x, y, true); // true => مسدود
+                    }
+                }
+            }
+
+            return cm;
+        } catch (Exception ex) {
+            throw new RuntimeException("fromTMX(walkable/blocked) failed: " + ex.getMessage(), ex);
+        }
+    }
+
+    /* =========================
+       3) نسخه‌ی قدیمی: از tileset با property "walkable"
+       ========================= */
+
+    /**
+     * نسخه‌ی قدیمی (Legacy): تشخیص عبوری‌بودن با property تایل‌ها (walkable=true).
+     * در پروژه‌ی فعلی توصیه می‌شود از fromBinaryLayer یا fromTMX(walkable,blocked) استفاده کنید.
      */
     public static CollisionMap fromTMX(String tmxPath) throws Exception {
         File tmxFile = new File(tmxPath);
@@ -54,14 +179,18 @@ public class CollisionMap {
 
         // --- نگاشت GID به walkable ---
         NodeList tilesetNodes = mapElem.getElementsByTagName("tileset");
+
         class TilesetInfo {
             int firstGid;
-            Set<Integer> walkableIds = new HashSet<>(); // local tile ids
-            boolean isWalkable(int gid) {
-                return walkableIds.contains(gid - firstGid);
+            Set<Integer> walkableIds = new HashSet<>();
+            boolean owns(int gid) { return gid >= firstGid; }
+            boolean isWalkableGid(int gid) {
+                int local = gid - firstGid;
+                return walkableIds.contains(local);
             }
         }
-        java.util.List<TilesetInfo> tilesets = new java.util.ArrayList<>();
+
+        List<TilesetInfo> tilesets = new ArrayList<>();
         for (int i = 0; i < tilesetNodes.getLength(); i++) {
             Element ts = (Element) tilesetNodes.item(i);
             TilesetInfo info = new TilesetInfo();
@@ -75,7 +204,7 @@ public class CollisionMap {
                 for (int p = 0; p < propNodes.getLength(); p++) {
                     Element prop = (Element) propNodes.item(p);
                     if ("walkable".equalsIgnoreCase(prop.getAttribute("name")) &&
-                        "true".equalsIgnoreCase(prop.getAttribute("value"))) {
+                            "true".equalsIgnoreCase(prop.getAttribute("value"))) {
                         info.walkableIds.add(id);
                     }
                 }
@@ -83,31 +212,42 @@ public class CollisionMap {
             tilesets.add(info);
         }
 
-        // --- لایه اول ---
+        // اولین لایه‌ی تایل
         Element layer = (Element) mapElem.getElementsByTagName("layer").item(0);
-        String data = layer.getElementsByTagName("data").item(0).getTextContent().trim();
-        String[] tokens = data.split(",");
+        Element data = (Element) layer.getElementsByTagName("data").item(0);
+        String encoding = data.getAttribute("encoding");
+        if (!"csv".equalsIgnoreCase(encoding))
+            throw new IllegalStateException("Only CSV encoding supported in legacy fromTMX");
+
+        String[] rawLines = data.getTextContent().trim().split("\\R+");
+        int idx = 0;
         for (int y = 0; y < height; y++) {
+            String[] toks = rawLines[y].trim().split(",");
             for (int x = 0; x < width; x++) {
-                String s = tokens[y * width + x].trim();
-                if (s.isEmpty()) continue;
-                int gid = Integer.parseInt(s);
+                int gid = Integer.parseInt(toks[x].trim());
                 boolean walk = false;
-                for (TilesetInfo ts : tilesets) {
-                    if (gid >= ts.firstGid && ts.isWalkable(gid)) {
-                        walk = true;
-                        break;
+                if (gid != 0) {
+                    for (TilesetInfo ts : tilesets) {
+                        if (gid >= ts.firstGid && ts.isWalkableGid(gid)) {
+                            walk = true;
+                            break;
+                        }
                     }
                 }
                 cm.walkable[y][x] = walk;
+                idx++;
             }
         }
         return cm;
     }
 
+    /* =========================
+       4) ساخت از ماسک تصویری (PNG)
+       ========================= */
+
     /**
-     * ساخت CollisionMap از ماسک PNG سیاه/سفید.
-     * پیکسل سفید ⇒ قابل عبور، سیاه ⇒ غیرقابل عبور.
+     * ساخت CollisionMap از ماسک پیکسلی: پیکسل سفید ⇒ قابل عبور، سیاه ⇒ غیرقابل عبور.
+     * ابعاد خروجی برابر با ابعاد تصویر است (تایل=۱ پیکسل).
      */
     public static CollisionMap fromMask(String maskPath) throws IOException {
         BufferedImage img = ImageIO.read(new File(maskPath));
@@ -117,44 +257,129 @@ public class CollisionMap {
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 int rgb = img.getRGB(x, y) & 0xFFFFFF;
-                cm.walkable[y][x] = rgb != 0x000000; // غیر سیاه
+                cm.setWalkable(x, y, rgb != 0x000000);
             }
         }
         return cm;
     }
 
     /**
-     * ساخت CollisionMap از ماسک PNG که در آن هر بلوک tileWidth×tileHeight معرف یک تایل است.
-     * پیکسل سفید ⇒ قابل عبور، سیاه ⇒ غیرقابل عبور.
+     * ساخت CollisionMap از ماسک کاشی‌محور: هر بلوک tileWidth×tileHeight یک تایل.
+     * معیار: میانگین روشنایی بلوک؛ اگر >=127 ⇒ عبوری (سفید غالب)، در غیر اینصورت مسدود.
      */
     public static CollisionMap fromMask(String maskPath, int tileWidth, int tileHeight) throws IOException {
         BufferedImage img = ImageIO.read(new File(maskPath));
-        int w = img.getWidth() / tileWidth;
-        int h = img.getHeight() / tileHeight;
-        CollisionMap cm = new CollisionMap(w, h);
+        int tilesX = img.getWidth() / tileWidth;
+        int tilesY = img.getHeight() / tileHeight;
+        CollisionMap cm = new CollisionMap(tilesX, tilesY);
 
-        for (int ty = 0; ty < h; ty++) {
-            for (int tx = 0; tx < w; tx++) {
-                int px = tx * tileWidth;
-                int py = ty * tileHeight;
+        for (int ty = 0; ty < tilesY; ty++) {
+            for (int tx = 0; tx < tilesX; tx++) {
+                int px0 = tx * tileWidth;
+                int py0 = ty * tileHeight;
 
-                boolean walk = false;
-                for (int oy = 0; oy < tileHeight && !walk; oy++) {
+                long sum = 0;
+                for (int oy = 0; oy < tileHeight; oy++) {
                     for (int ox = 0; ox < tileWidth; ox++) {
-                        int rgb = img.getRGB(px + ox, py + oy) & 0xFFFFFF;
-                        if (rgb != 0x000000) { walk = true; break; }
+                        int rgb = img.getRGB(px0 + ox, py0 + oy) & 0xFFFFFF;
+                        int r = (rgb >> 16) & 0xFF;
+                        int g = (rgb >> 8)  & 0xFF;
+                        int b = (rgb)       & 0xFF;
+                        int lum = (r + g + b) / 3;
+                        sum += lum;
                     }
                 }
-                cm.walkable[ty][tx] = walk;
-
-                int rgb = img.getRGB(px, py) & 0xFFFFFF;
-                cm.walkable[ty][tx] = rgb != 0x000000;
-
+                int count = tileWidth * tileHeight;
+                int avg = (int)(sum / count);
+                boolean canPass = avg >= 127; // سفیدتر ⇒ عبوری
+                cm.setWalkable(tx, ty, canPass);
             }
         }
         return cm;
     }
 
-    public int getWidth() { return width; }
-    public int getHeight() { return height; }
+    /* =========================
+       5) ادغام چند نقشه برخورد
+       ========================= */
+
+    /**
+     * ادغام چند CollisionMap هم‌اندازه: اگر هرکدام مسدود کند، خروجی هم مسدود می‌شود.
+     * (Intersection روی walkable: خروجی فقط وقتی عبوری است که همه عبوری باشند)
+     */
+    public static CollisionMap merge(List<CollisionMap> maps) {
+        if (maps == null || maps.isEmpty())
+            throw new IllegalArgumentException("maps is empty");
+        CollisionMap base = maps.get(0);
+        int w = base.width, h = base.height;
+        CollisionMap out = new CollisionMap(w, h);
+
+        // شروع: همه عبوری
+        for (int y = 0; y < h; y++) Arrays.fill(out.walkable[y], true);
+
+        for (CollisionMap m : maps) {
+            if (m.width != w || m.height != h)
+                throw new IllegalArgumentException("All maps must have the same size");
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    // اگر هر کدام مسدود کند => خروجی مسدود
+                    if (!m.walkable[y][x]) out.walkable[y][x] = false;
+                }
+            }
+        }
+        return out;
+    }
+
+    /* =========================
+       کمک‌متدهای داخلی
+       ========================= */
+
+    private static Document parseXML(String path) throws Exception {
+        DocumentBuilderFactory f = DocumentBuilderFactory.newInstance();
+        f.setNamespaceAware(false);
+        DocumentBuilder b = f.newDocumentBuilder();
+        return b.parse(new File(path));
+    }
+
+    private static Element findLayerByName(Document doc, String name) {
+        NodeList layers = doc.getElementsByTagName("layer");
+        for (int i = 0; i < layers.getLength(); i++) {
+            Element e = (Element) layers.item(i);
+            if (name.equals(e.getAttribute("name"))) return e;
+        }
+        return null;
+    }
+
+    /** خواندن CSV به ماتریس [y][x] با حذف فضا و خطوط خالی. */
+    private static int[][] readCsvGrid(String csvText, int w, int h) {
+        String[] rawLines = csvText.trim().split("\\R+");
+        if (rawLines.length != h) {
+            // اگر بعضی خطوط خالی/فضا دارد، بازسازی امن:
+            List<Integer> flat = new ArrayList<>(w*h);
+            for (String line : rawLines) {
+                String t = line.trim();
+                if (t.isEmpty()) continue;
+                for (String s : t.split(",")) {
+                    String ss = s.trim();
+                    if (!ss.isEmpty()) flat.add(Integer.parseInt(ss));
+                }
+            }
+            if (flat.size() != w*h)
+                throw new IllegalStateException("CSV size mismatch: expected " + (w*h) + " got " + flat.size());
+            int[][] out = new int[h][w];
+            int idx = 0;
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                    out[y][x] = flat.get(idx++);
+            return out;
+        } else {
+            int[][] out = new int[h][w];
+            for (int y = 0; y < h; y++) {
+                String[] toks = rawLines[y].trim().split(",");
+                for (int x = 0; x < w; x++) {
+                    out[y][x] = Integer.parseInt(toks[x].trim());
+                }
+            }
+            return out;
+        }
+    }
 }

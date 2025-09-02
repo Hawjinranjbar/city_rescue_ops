@@ -1,93 +1,98 @@
-// util/MoveGuard.java
 package util;
 
 import agent.Rescuer;
+import agent.Vehicle;
 import map.Cell;
 import map.CityMap;
 
 /**
- * --------------------
- * لایه: Utility Layer
- * --------------------
- * درگاه واحدِ حرکت ایمن روی نقشه (تایل‌محور).
- * - قبل از جابه‌جایی: بررسی walkable و occupied
- * - آزاد/اشغال‌کردن سلول‌ها
- * - ست جهت و جلو بردن انیمیشن
+ * MoveGuard: بررسی و اعمال حرکت روی شبکهٔ تایل.
+ * جهت‌ها: 0=DOWN, 1=LEFT, 2=RIGHT, 3=UP
  */
 public final class MoveGuard {
 
-    private MoveGuard() { }
+    private MoveGuard() {}
 
-    /**
-     * حرکت به مقصد مطلق (nx,ny) با جهت dir.
-     * اگر CollisionMap وجود داشته باشد ولی propertyهای مربوطه در فایل TMX تعریف نشده
-     * باشند، با تکیه بر اطلاعات خود Cell تعیین می‌کنیم که سلول قابل عبور است یا نه.
-     */
-    public static boolean tryMoveTo(CityMap map, CollisionMap collision, Rescuer r,
-                                    int nx, int ny, int dir) {
-        if (map == null || r == null || r.getPosition() == null) return false;
+    /** تلاش برای حرکت Rescuer به (nx,ny). در صورت موفقیت، occupied مبدأ/مقصد به‌روز می‌شود. */
+    public static boolean tryMoveTo(CityMap map,
+                                    CollisionMap collisionMap, // می‌تواند null باشد
+                                    Rescuer rescuer,
+                                    int nx, int ny,
+                                    int dir) {
+        if (map == null || rescuer == null) return false;
+        Position cur = rescuer.getPosition();
+        if (cur == null) return false;
+
+        // حتی اگر حرکت نکند، جهت را تنظیم کن
+        safeSetDir(rescuer, dir);
+
         if (!map.isValid(nx, ny)) return false;
 
-        // اگر مقصد همان جای فعلی است: فقط جهت/فریم را آپدیت کن
-        if (r.getPosition().getX() == nx && r.getPosition().getY() == ny) {
-            r.setDirection(dir);
-            r.nextFrame();
-            return true;
-        }
+        Cell dest = map.getCell(nx, ny);
+        if (dest == null || dest.isOccupied()) return false;
 
-        final Cell dest = map.getCell(nx, ny);
-        if (dest == null) return false;
+        boolean pass = (collisionMap != null)
+                ? collisionMap.isWalkable(nx, ny)
+                : map.isWalkable(nx, ny);
+        if (!pass) return false;
 
-        // اگر نگاشت برخورد وجود دارد، صرفاً به همان تکیه کن
-        if (collision != null) {
-            if (!collision.isWalkable(nx, ny)) return false;
-        } else {
-            // در نبود CollisionMap باید خود سلول قابل عبور باشد
-            if (!dest.isWalkable()) return false;
-        }
+        // آزاد کردن قبلی
+        map.setOccupied(cur.getX(), cur.getY(), false);
 
-        // در هر صورت روی سلول اشغال‌شده اجازه حرکت نده
-        if (dest.isOccupied()) return false;
+        // جابه‌جایی + انیمیشن
+        safeMove(rescuer, nx, ny, dir);
 
+        // اشغال جدید
+        map.setOccupied(nx, ny, true);
+        return true;
+    }
 
+    /** حرکت Vehicle با قید برخورد/اشغال. */
+    public static boolean tryMoveToVehicle(CityMap map,
+                                           CollisionMap vehicleCM, // می‌تواند null باشد
+                                           Vehicle vehicle,
+                                           int nx, int ny) {
+        if (map == null || vehicle == null) return false;
+        Position cur = vehicle.getTile();
+        if (cur == null) return false;
 
-        
-        // اگر CollisionMap حرکت را ممنوع کرده اما خود سلول walkable نیست، رد کن
-        if (collision != null && !collision.isWalkable(nx, ny) && !dest.isWalkable()) {
-            return false;
-        }
+        if (!map.isValid(nx, ny)) return false;
+        Cell dest = map.getCell(nx, ny);
+        if (dest == null || dest.isOccupied()) return false;
 
-        // فقط اجازه‌ی حرکت روی سلول‌های قابل عبور و خالی
-        if (!dest.isWalkable() || dest.isOccupied()) return false;
+        boolean pass = (vehicleCM != null) ? vehicleCM.isWalkable(nx, ny) : map.isWalkable(nx, ny);
+        if (!pass) return false;
 
+        // آزاد کردن قبلی
+        map.setOccupied(cur.getX(), cur.getY(), false);
 
-        // آزاد کردن سلول فعلی (اگر معتبر بود)
-        int cx = r.getPosition().getX();
-        int cy = r.getPosition().getY();
-        if (map.isValid(cx, cy)) {
-            Cell cur = map.getCell(cx, cy);
-            if (cur != null) cur.setOccupied(false);
-        }
+        // حرکت
+        vehicle.move(nx - cur.getX(), ny - cur.getY());
 
-        // اعمال حرکت بدون ساخت Position جدید
-        r.setDirection(dir);
-        r.setPositionXY(nx, ny);
-
-        // اشغال مقصد
-        dest.setOccupied(true);
-
-        // جلو بردن انیمیشن
-        r.nextFrame();
+        // اشغال جدید
+        Position after = vehicle.getTile();
+        if (after != null) map.setOccupied(after.getX(), after.getY(), true);
 
         return true;
     }
 
-    /** حرکت نسبی بر اساس دلتا (dx,dy) با جهت dir. */
-    public static boolean tryMoveDelta(CityMap map, CollisionMap collision, Rescuer r,
-                                       int dx, int dy, int dir) {
-        if (map == null || r == null || r.getPosition() == null) return false;
-        final int nx = r.getPosition().getX() + dx;
-        final int ny = r.getPosition().getY() + dy;
-        return tryMoveTo(map, collision, r, nx, ny, dir);
+    // ---- هِلپرهای ایمن (سازگاری با نسخه‌های مختلف Rescuer) ----
+    private static void safeMove(Rescuer r, int x, int y, int dir) {
+        try {
+            r.getClass().getMethod("onMoveStep", int.class, int.class, int.class)
+                    .invoke(r, x, y, dir);
+        } catch (NoSuchMethodException e) {
+            r.setPositionXY(x, y);
+            safeSetDir(r, dir);
+            safeNext(r);
+        } catch (Throwable ignored) {}
+    }
+    private static void safeSetDir(Rescuer r, int dir) {
+        try { r.getClass().getMethod("setDirection", int.class).invoke(r, dir); }
+        catch (Throwable ignored) {}
+    }
+    private static void safeNext(Rescuer r) {
+        try { r.getClass().getMethod("nextFrame").invoke(r); }
+        catch (Throwable ignored) {}
     }
 }

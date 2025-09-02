@@ -1,3 +1,4 @@
+// util/AssetLoader.java
 package util;
 
 import javax.imageio.ImageIO;
@@ -16,17 +17,16 @@ import java.util.Map;
  * لایه: Utility Layer
  * --------------------
  * Loader ساده و سریع برای تصاویر و شیت‌های تایل.
- * نکات:
- *  - اگر مسیر با "/" شروع شود از classpath خوانده می‌شود.
- *  - در غیر این صورت از فایل‌سیستم خوانده می‌شود.
- *  - از cache استفاده می‌شود تا لود تکراری نشود.
+ * - اگر مسیر با "/" شروع شود از classpath خوانده می‌شود.
+ * - در غیر این صورت از فایل‌سیستم خوانده می‌شود.
+ * - از cache استفاده می‌شود تا لود تکراری نشود.
  */
 public final class AssetLoader {
 
     /** Cache با محدودیت اندازه برای جلوگیری از مصرف بیش‌ازحد حافظه. */
     private static final int MAX_CACHE_ENTRIES = 256;
     private static final Map<String, BufferedImage> CACHE =
-            Collections.synchronizedMap(new LinkedHashMap<>(128, 0.75f, true) {
+            Collections.synchronizedMap(new LinkedHashMap<String, BufferedImage>(128, 0.75f, true) {
                 @Override
                 protected boolean removeEldestEntry(Map.Entry<String, BufferedImage> eldest) {
                     return size() > MAX_CACHE_ENTRIES;
@@ -79,7 +79,7 @@ public final class AssetLoader {
     }
 
     // -------------------------
-    // Scale با حفظ کش
+    // Scale با حفظ شفافیت + کش
     // -------------------------
     public static BufferedImage loadScaled(String path, int width, int height) {
         String key = path + "#" + width + "x" + height;
@@ -114,7 +114,6 @@ public final class AssetLoader {
         return grid;
     }
 
-    /** برش یک ردیف مشخص از شیت (برای انیمیشن یک جهت). */
     public static BufferedImage[] sliceRow(BufferedImage sheet, int rowIndex, int frameW, int frameH, int frames) {
         if (sheet == null) throw new IllegalArgumentException("sheet is null");
         BufferedImage[] arr = new BufferedImage[frames];
@@ -127,11 +126,6 @@ public final class AssetLoader {
     // -----------------------------------------------------------
     // ابزارهای مخصوص Tiled: margin/spacing و گرفتن تایل بر اساس GID
     // -----------------------------------------------------------
-
-    /**
-     * برش گرید با درنظر گرفتن margin و spacing مطابق فرمت Tiled.
-     * اگر rows/cols منفی باشند، از روی اندازهٔ تصویر محاسبه می‌شوند.
-     */
     public static BufferedImage[][] sliceGridSpaced(
             BufferedImage sheet,
             int tileW, int tileH,
@@ -160,11 +154,6 @@ public final class AssetLoader {
         return grid;
     }
 
-    /**
-     * گرفتن یک تایل از شیت بر اساس GID (مثل Tiled).
-     * @param firstGid  اولین شناسهٔ این tileset در TMX
-     * @param gid       شناسهٔ سراسری تایل در لایه
-     */
     public static BufferedImage getTileFromSheetByGid(
             BufferedImage sheet,
             int tileW, int tileH,
@@ -182,23 +171,18 @@ public final class AssetLoader {
         int y = margin + row * (tileH + spacing);
 
         if (x + tileW > sheet.getWidth() || y + tileH > sheet.getHeight()) {
-            // خارج از محدوده (مثلاً gid نامعتبر)
             return null;
         }
         return sheet.getSubimage(x, y, tileW, tileH);
     }
 
-    /**
-     * ساخت ایندکس از همهٔ تایل‌های یک شیت (کلید: localId از 0).
-     * برای سرعت در رندر لایه‌های TMX.
-     */
     public static Map<Integer, BufferedImage> buildTilesetIndex(
             BufferedImage sheet,
             int tileW, int tileH,
             int margin, int spacing
     ) {
         BufferedImage[][] grid = sliceGridSpaced(sheet, tileW, tileH, margin, spacing, -1, -1);
-        Map<Integer, BufferedImage> map = new LinkedHashMap<>();
+        Map<Integer, BufferedImage> map = new LinkedHashMap<Integer, BufferedImage>();
         int id = 0;
         for (int r = 0; r < grid.length; r++) {
             for (int c = 0; c < grid[0].length; c++) {
@@ -213,7 +197,9 @@ public final class AssetLoader {
     // -------------------------
     public static void preload(String... paths) {
         if (paths == null) return;
-        for (String p : paths) loadImage(p);
+        for (int i = 0; i < paths.length; i++) {
+            loadImage(paths[i]);
+        }
     }
 
     public static boolean exists(String path) {

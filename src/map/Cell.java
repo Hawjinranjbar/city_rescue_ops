@@ -8,12 +8,11 @@ import java.awt.image.BufferedImage;
  * لایه: Domain Layer
  * --------------------
  * نمایندهٔ یک خانه (Tile) روی نقشه.
- * می‌تونه جاده، مانع، بیمارستان یا فضای خالی باشه.
+ * می‌تواند جاده، مانع، بیمارستان یا فضای خالی باشد.
  */
 public class Cell {
 
     public enum Type {
-
         ROAD,       // جاده قابل عبور
         SIDEWALK,   // پیاده‌رو
         GROUND,     // زمین خنثی
@@ -24,35 +23,25 @@ public class Cell {
 
         /**
          * آیا این نوع سلول قابل عبور است؟
-         *<p>
-         * در برخی کلاس‌ها نسخه‌های قدیمی متدی با نام {@code walkable()}
-         * فراخوانی می‌شد که وجود نداشت و باعث خطای کامپایل می‌گردید.
-         * برای سازگاری به عقب، هر دو نام {@link #isWalkable()} و
-         * {@link #walkable()} در دسترس هستند.
+         * برای سازگاری به عقب، هر دو نام isWalkable() و walkable() در دسترس هستند.
          */
         public boolean isWalkable() {
+            // عبوری‌ها: جاده، پیاده‌رو، ورودی/ناحیهٔ بیمارستان
             return this == ROAD || this == SIDEWALK || this == HOSPITAL;
-
         }
 
         /** سازگاری با کد قدیمی که به جای isWalkable از walkable استفاده می‌کرد. */
-        public boolean walkable() {
-            return isWalkable();
-        }
+        public boolean walkable() { return isWalkable(); }
 
         /** true اگر این نوع مانع/غیرقابل عبور باشد. */
-        public boolean isBlocked() {
-            return !isWalkable();
-        }
+        public boolean isBlocked() { return !isWalkable(); }
 
         /** true اگر این تایل بیمارستان باشد. */
-        public boolean isHospital() {
-            return this == HOSPITAL;
-        }
+        public boolean isHospital() { return this == HOSPITAL; }
     }
 
     private final Position position;  // موقعیت تایل در شبکه
-    private final Type type;          // نوع سلول
+    private final Type type;          // نوع سلول (immutable)
     private boolean occupied;         // آیا عامل روی این تایل ایستاده است؟
 
     // ---- بخش گرافیک ----
@@ -80,15 +69,27 @@ public class Cell {
 
     // ---- منطق ----
     public Position getPosition() { return position; }
+    public int getX() { return position != null ? position.getX() : 0; }
+    public int getY() { return position != null ? position.getY() : 0; }
+
     public Type getType() { return type; }
 
-
-    /** فقط ROAD و HOSPITAL قابل عبورند. */
+    /** عبوری بودن بر اساس نوع سلول. */
     public boolean isWalkable() { return type.isWalkable(); }
 
+    /** بلاک بودن با درنظرگرفتن اشغال‌بودن تایل. */
+    public boolean isBlocked() { return type.isBlocked() || occupied; }
 
     public boolean isOccupied() { return occupied; }
     public void setOccupied(boolean occupied) { this.occupied = occupied; }
+
+    // ---- هِلپرهای نوع ----
+    public boolean isRoad()      { return type == Type.ROAD; }
+    public boolean isSidewalk()  { return type == Type.SIDEWALK; }
+    public boolean isGround()    { return type == Type.GROUND; }
+    public boolean isObstacle()  { return type == Type.OBSTACLE || type == Type.BUILDING; }
+    public boolean isHospital()  { return type == Type.HOSPITAL; }
+    public boolean isEmpty()     { return type == Type.EMPTY; }
 
     // ---- گرافیک ----
     public BufferedImage getImage() { return image; }
@@ -98,8 +99,11 @@ public class Cell {
     public void setTileId(int tileId) { this.tileId = tileId; }
 
     // ---- ابزار ----
-    public Cell cloneShallow() {
-        return new Cell(position, type, image, tileId);
+    public Cell cloneShallow() { return new Cell(position, type, image, tileId); }
+
+    /** کپی با تصویر جدید (برای تغییر تم/ری‌اسکین بدون دست‌زدن به type). */
+    public Cell copyWithImage(BufferedImage newImage) {
+        return new Cell(position, type, newImage, tileId);
     }
 
     @Override
@@ -112,4 +116,3 @@ public class Cell {
                 '}';
     }
 }
-

@@ -59,6 +59,7 @@ public final class MapLoader {
         }
     }
 
+    /** لود نقشهٔ اصلی (فقط لایهٔ تصویری اول) برای رندر پایه */
     public static CityMap loadTMX(String tmxPath) throws Exception {
         File tmxFile = new File(tmxPath);
         File baseDir = tmxFile.getParentFile();
@@ -112,7 +113,7 @@ public final class MapLoader {
             tilesets.add(info);
         }
 
-        // ---- فقط لایهٔ اول ----
+        // ---- فقط لایهٔ اول تصویری ----
         Element layer = (Element) mapElem.getElementsByTagName("layer").item(0);
         int width  = Integer.parseInt(layer.getAttribute("width"));
         int height = Integer.parseInt(layer.getAttribute("height"));
@@ -184,10 +185,11 @@ public final class MapLoader {
                 }
 
                 // اگر CityMap متد ثبت پراپرتی‌ها را داشت، ذخیره کن (اختیاری)
-                try { cityMap.getClass()
-                        .getMethod("registerTileProperties", int.class, Map.class)
-                        .invoke(cityMap, gid, propMap); }
-                catch (Throwable ignored) {}
+                try {
+                    cityMap.getClass()
+                            .getMethod("registerTileProperties", int.class, Map.class)
+                            .invoke(cityMap, gid, propMap);
+                } catch (Throwable ignored) {}
 
                 // --- هماهنگ‌سازی نهایی با walkable ---
                 if (walkable && type == Cell.Type.EMPTY) {
@@ -207,6 +209,83 @@ public final class MapLoader {
     /** سازگاری با نسخه‌های قدیمی‌تر. */
     public static CityMap loadMap(String tmxPath) throws Exception {
         return loadTMX(tmxPath);
+    }
+
+    /* =========================
+       متدهای کمکی خواندن ObjectGroup برای KeyPoints/Spawns
+       ========================= */
+
+    /** برگرداندن اولین آبجکت با name دقیق (به مختصات تایل). */
+    public static Position findObject(String tmxPath, String groupName, String objectName) {
+        try {
+            Document doc = parseXML(tmxPath);
+            Element map = (Element) doc.getElementsByTagName("map").item(0);
+            int tileW = Integer.parseInt(map.getAttribute("tilewidth"));
+            int tileH = Integer.parseInt(map.getAttribute("tileheight"));
+
+            NodeList groups = doc.getElementsByTagName("objectgroup");
+            for (int gi = 0; gi < groups.getLength(); gi++) {
+                Element g = (Element) groups.item(gi);
+                if (!groupName.equals(g.getAttribute("name"))) continue;
+
+                NodeList objs = g.getElementsByTagName("object");
+                for (int oi = 0; oi < objs.getLength(); oi++) {
+                    Element o = (Element) objs.item(oi);
+                    if (objectName.equals(o.getAttribute("name"))) {
+                        int x = (int)Math.round(Double.parseDouble(o.getAttribute("x")) / tileW);
+                        int y = (int)Math.round(Double.parseDouble(o.getAttribute("y")) / tileH);
+                        return new Position(x, y);
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    /** اگر نبود، مقدار پیش‌فرض بده. */
+    public static Position findObjectOrDefault(String tmxPath, String group, String name, Position def) {
+        Position p = findObject(tmxPath, group, name);
+        return (p != null) ? p : def;
+    }
+
+    /** همهٔ آبجکت‌هایی که type مشخص دارند را (در یک objectgroup خاص) برمی‌گرداند. */
+    public static List<Position> findObjectsByType(String tmxPath, String groupName, String type) {
+        List<Position> out = new ArrayList<>();
+        try {
+            Document doc = parseXML(tmxPath);
+            Element map = (Element) doc.getElementsByTagName("map").item(0);
+            int tileW = Integer.parseInt(map.getAttribute("tilewidth"));
+            int tileH = Integer.parseInt(map.getAttribute("tileheight"));
+
+            NodeList groups = doc.getElementsByTagName("objectgroup");
+            for (int gi = 0; gi < groups.getLength(); gi++) {
+                Element g = (Element) groups.item(gi);
+                if (!groupName.equals(g.getAttribute("name"))) continue;
+
+                NodeList objs = g.getElementsByTagName("object");
+                for (int oi = 0; oi < objs.getLength(); oi++) {
+                    Element o = (Element) objs.item(oi);
+                    String t = o.getAttribute("type");
+                    if (type.equals(t)) {
+                        int x = (int)Math.round(Double.parseDouble(o.getAttribute("x")) / tileW);
+                        int y = (int)Math.round(Double.parseDouble(o.getAttribute("y")) / tileH);
+                        out.add(new Position(x, y));
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        return out;
+    }
+
+    /* =========================
+       Helpers
+       ========================= */
+
+    private static Document parseXML(String path) throws Exception {
+        DocumentBuilderFactory f = DocumentBuilderFactory.newInstance();
+        f.setNamespaceAware(false);
+        DocumentBuilder b = f.newDocumentBuilder();
+        return b.parse(new File(path));
     }
 
     private static int parseIntOr(String s, int def) {

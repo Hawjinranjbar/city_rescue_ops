@@ -1,110 +1,59 @@
 package agent;
 
+import map.Cell;
 import map.CityMap;
 import map.Hospital;
-import strategy.IPathFinder;
-import strategy.IAgentDecision;
+import util.CollisionMap;
 import util.MoveGuard;
 import util.Position;
-import util.CollisionMap;
 import victim.Injured;
 
-import java.util.List;
+import java.util.*;
 
 /**
- * --------------------
- * Domain Layer
- * --------------------
- * کنترل رفتار نجات‌دهنده:
- *  - انتخاب مجروح هدف (IAgentDecision)
- *  - مسیریابی تا مجروح/بیمارستان (IPathFinder)
- *  - حرکت امن روی نقشه (MoveGuard + CollisionMap)
+ * کنترل حرکت عامل‌ها روی شبکه.
+ * - از MoveGuard برای اعمال حرکت و occupancy استفاده می‌کند.
+ * - collisionMap می‌تواند null باشد (در این صورت از منطق CityMap استفاده می‌شود).
+ * - سازگار با کال قدیمی: ctor(map, collisionMap, pathFinder, decisionLogic) و performAction(...)
  */
 public class AgentController {
 
-    private final IPathFinder pathFinder;
-    private final IAgentDecision decisionLogic;
     private final CityMap map;
-    private final CollisionMap collisionMap;
+    private final CollisionMap collisionMap;    // می‌تواند null باشد
 
-    public AgentController(CityMap map,
-                           CollisionMap collisionMap,
-                           IPathFinder pathFinder,
-                           IAgentDecision decisionLogic) {
+    // ارجاعات اختیاری (برای سازگاری با امضای قدیمی RescueCoordinator)
+    private final Object pathFinderRef;         // استفاده نمی‌کنیم؛ فقط نگه می‌داریم
+    private final Object decisionRef;           // استفاده نمی‌کنیم؛ فقط نگه می‌داریم
+
+    /* === سازنده‌ها === */
+
+    public AgentController(CityMap map, CollisionMap cm) {
+        this(map, cm, null, null);
+    }
+
+    // سازگار با نسخه‌ی قدیمی (انواع هرچه باشد، این ctor match می‌شود)
+    public AgentController(CityMap map, CollisionMap cm, Object pathFinder, Object decisionLogic) {
         this.map = map;
-        this.collisionMap = collisionMap;
-        this.pathFinder = pathFinder;
-        this.decisionLogic = decisionLogic;
+        this.collisionMap = cm;
+        this.pathFinderRef = pathFinder;
+        this.decisionRef = decisionLogic;
     }
 
-    /**
-     * اجرای یک «تیک» از رفتار ریسکیور.
-     * اگر حمل نمی‌کند → قربانیِ هدف را انتخاب و به سمتش حرکت می‌کند.
-     * اگر حمل می‌کند → به نزدیک‌ترین بیمارستان می‌رود و تحویل می‌دهد.
-     */
-    public void performAction(Rescuer rescuer,
-                              List<Injured> candidates,
-                              List<Hospital> hospitals) {
-
-        if (rescuer == null || rescuer.getPosition() == null || map == null) return;
-
-        // حالت 1: در حال حمل نیست → به سمت مجروح هدف
-        if (!rescuer.isCarryingVictim()) {
-            Injured target = (decisionLogic != null)
-                    ? decisionLogic.selectVictim(rescuer, candidates)
-                    : null;
-
-            if (target == null || target.isDead() || target.isRescued() || target.getPosition() == null) {
-                return;
-            }
-
-            target.setBeingRescued(true);
-
-            List<Position> pathToVictim = (pathFinder != null)
-                    ? pathFinder.findPath(rescuer.getPosition(), target.getPosition())
-                    : null;
-
-            boolean reached = moveAlongPath(rescuer, pathToVictim);
-            if (reached) {
-                rescuer.pickUp(target);
-            } else {
-                target.setBeingRescued(false); // مسیر غیرقابل‌عبور/مسدود
-            }
-            return; // همین تیک کافی است
-        }
-
-        // حالت 2: در حال حمل است → بیمارستان
-        Injured carried = rescuer.getCarryingVictim();
-        Hospital nearest = findNearestHospital(rescuer.getPosition(), hospitals);
-        if (nearest == null || nearest.getPosition() == null) return;
-
-        List<Position> pathToHospital = (pathFinder != null)
-                ? pathFinder.findPath(rescuer.getPosition(), nearest.getPosition())
-                : null;
-
-        boolean delivered = moveAlongPath(rescuer, pathToHospital);
-        if (delivered) {
-            rescuer.dropVictim();
-            if (carried != null) carried.setBeingRescued(false);
-        }
-    }
-
-    /** حرکت طبق مسیر؛ اگر به انتهای مسیر برسد true. */
-    private boolean moveAlongPath(Rescuer rescuer, List<Position> path) {
-        if (rescuer == null || rescuer.getPosition() == null || path == null || path.isEmpty()) return false;
+    /* === حرکت روی مسیر === */
+    public boolean moveAlongPath(Rescuer rescuer, List<Position> path) {
+        if (rescuer == null || path == null || path.isEmpty()) return false;
 
         Position current = rescuer.getPosition();
-        for (Position step : path) {
-            if (step == null) continue;
-            // اولین خانه مسیر معمولاً همان موقعیت فعلی است
-            if (step.getX() == current.getX() && step.getY() == current.getY()) continue;
 
+        for (Position step : path) {
+            if (current != null && current.getX() == step.getX() && current.getY() == step.getY()) {
+                continue; // همین خانه
+            }
             int dir = determineDirection(current, step);
 
-            // اگر امضای شما فرق دارد، فقط همین خط را تنظیم کنید.
             boolean ok = MoveGuard.tryMoveTo(
                     map,
-                    collisionMap,
+                    collisionMap,      // اگر برخورد ویژه نداری: null
                     rescuer,
                     step.getX(),
                     step.getY(),
@@ -112,35 +61,90 @@ public class AgentController {
             );
             if (!ok) return false;
 
-            // اگر جابه‌جایی داخل MoveGuard انجام نمی‌شود، این خط را باز کنید:
-            // rescuer.setPosition(step);
-
             current = step;
         }
         return true;
     }
 
-    /** تعیین جهت بر اساس دلتا بین دو خانه (0=پایین،1=چپ،2=راست،3=بالا). */
-    private int determineDirection(Position from, Position to) {
-        int dx = to.getX() - from.getX();
-        int dy = to.getY() - from.getY();
-        if (dx == 1 && dy == 0) return 2; // راست
-        if (dx == -1 && dy == 0) return 1; // چپ
-        if (dy == 1 && dx == 0) return 0; // پایین
-        if (dy == -1 && dx == 0) return 3; // بالا
-        return 0;
+    /* === اکشن سطح بالا برای هماهنگ‌کننده (سازگار با کال قدیمی) === */
+    public void performAction(Rescuer rescuer,
+                              List<Injured> candidates,
+                              List<Hospital> hospitals) {
+        if (rescuer == null || candidates == null || candidates.isEmpty()) return;
+
+        // 1) نزدیک‌ترین مجروح زنده/نجات‌نشده
+        Injured target = null;
+        int bestD = Integer.MAX_VALUE;
+        Position rp = rescuer.getPosition();
+        for (Injured inj : candidates) {
+            if (inj == null || inj.isDead() || inj.isRescued() || inj.getPosition() == null) continue;
+            int d = manhattan(rp, inj.getPosition());
+            if (d < bestD) { bestD = d; target = inj; }
+        }
+        if (target == null) return;
+
+        // 2) مسیر تا مجروح با BFS روی گرافِ walkable
+        List<Position> path = bfs(rp, target.getPosition());
+        if (path.isEmpty()) return;
+
+        // 3) حرکت
+        moveAlongPath(rescuer, path);
+        // (اگر خواستی: برداشتن مجروح/رفتن تا بیمارستان را اینجا ادامه بدهی)
     }
 
-    private Hospital findNearestHospital(Position from, List<Hospital> hospitals) {
-        if (from == null || hospitals == null || hospitals.isEmpty()) return null;
-        Hospital nearest = null;
-        int best = Integer.MAX_VALUE;
-        for (Hospital h : hospitals) {
-            if (h == null || h.getPosition() == null) continue;
-            int d = Math.abs(from.getX() - h.getPosition().getX())
-                    + Math.abs(from.getY() - h.getPosition().getY());
-            if (d < best) { best = d; nearest = h; }
+    /* === BFS ساده روی همسایه‌های ۴جهته === */
+    private List<Position> bfs(Position start, Position goal) {
+        List<Position> empty = Collections.emptyList();
+        if (start == null || goal == null) return empty;
+
+        int w = map.getWidth(), h = map.getHeight();
+        boolean[][] vis = new boolean[h][w];
+        Position[][] prev = new Position[h][w];
+
+        ArrayDeque<Position> q = new ArrayDeque<>();
+        q.add(start);
+        vis[start.getY()][start.getX()] = true;
+
+        while (!q.isEmpty()) {
+            Position cur = q.removeFirst();
+            if (cur.getX() == goal.getX() && cur.getY() == goal.getY()) break;
+
+            for (Position nb : (collisionMap != null
+                    ? map.getWalkableNeighbors(cur, collisionMap)
+                    : map.getWalkableNeighbors(cur))) {
+                int nx = nb.getX(), ny = nb.getY();
+                if (!vis[ny][nx]) {
+                    vis[ny][nx] = true;
+                    prev[ny][nx] = cur;
+                    q.addLast(nb);
+                }
+            }
         }
-        return nearest;
+
+        if (!vis[goal.getY()][goal.getX()]) return empty; // قابل دسترس نیست
+
+        ArrayList<Position> path = new ArrayList<>();
+        Position cur = goal;
+        while (cur != null && !(cur.getX() == start.getX() && cur.getY() == start.getY())) {
+            path.add(cur);
+            cur = prev[cur.getY()][cur.getX()];
+        }
+        Collections.reverse(path);
+        return path;
+    }
+
+    /** 0=DOWN,1=LEFT,2=RIGHT,3=UP */
+    private static int determineDirection(Position from, Position to) {
+        if (from == null || to == null) return 0;
+        int dx = to.getX() - from.getX();
+        int dy = to.getY() - from.getY();
+        if (dy > 0) return 0;   // DOWN
+        if (dx < 0) return 1;   // LEFT
+        if (dx > 0) return 2;   // RIGHT
+        return 3;               // UP
+    }
+
+    private static int manhattan(Position a, Position b) {
+        return Math.abs(a.getX() - b.getX()) + Math.abs(a.getY() - b.getY());
     }
 }

@@ -1,127 +1,98 @@
 import agent.Rescuer;
-import map.CityMap;
 import map.Cell;
+import map.CityMap;
 import map.MapLoader;
+import playercontrol.DecisionInterface;
 import ui.GamePanel;
-import util.MoveGuard;
+import ui.KeyHandler;
 import util.Position;
-import util.CollisionMap;
+import victim.Injured;
 
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.KeyAdapter;
-import java.awt.event.KeyEvent;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.util.ArrayList;
 import java.util.List;
 
 public class Main {
 
-    private static CityMap map;
-    private static Rescuer r;
-    private static GamePanel gamePanel;
-    private static CollisionMap collisionMap;
+    private static final String TMX_PATH = "assets/maps/rescue_city.tmx";
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(new Runnable() {
             @Override public void run() {
                 try {
-                    // 1) Load map + collision directly from TMX properties
-                    map = MapLoader.loadTMX("assets/maps/rescue_city.tmx");
-                    collisionMap = CollisionMap.fromTMX("assets/maps/rescue_city.tmx");
-                    map.setCollisionMap(collisionMap);
+                    // 1) لود نقشه از TMX
+                    CityMap cityMap = MapLoader.loadTMX(TMX_PATH);
 
-                    // 2) Spawn rescuer at nearest road (bottom-right search)
-                    List<Rescuer> rescuers = new ArrayList<>();
-                    Position start = findBottomRightRoad();
-                    r = new Rescuer(1, start);
-                    Cell startCell = map.getCell(start.getX(), start.getY());
-                    if (startCell != null) startCell.setOccupied(true);
-                    rescuers.add(r);
+                    // 2) ساخت یک Rescuer روی اولین تایل جاده
+                    List<Rescuer> rescuers = new ArrayList<Rescuer>();
+                    Position spawn = findFirstOfType(cityMap, Cell.Type.ROAD);
+                    if (spawn == null) spawn = new Position(1, 1);
+                    Rescuer r1 = new Rescuer(1, spawn);
+                    rescuers.add(r1);
+                    cityMap.setOccupied(spawn.getX(), spawn.getY(), true);
 
-                    // 3) Game panel
-                    gamePanel = new GamePanel(map, rescuers, new ArrayList<>()); // victims: empty for now
-                    gamePanel.setFocusable(true);
+                    // 3) لیست مجروح‌ها (فعلاً خالی)
+                    List<Injured> victims = new ArrayList<Injured>();
 
-                    // 4) Keyboard control – movement only if MoveGuard allows (roads only)
-                    gamePanel.addKeyListener(new KeyAdapter() {
-                        @Override public void keyPressed(KeyEvent e) {
-                            if (r == null || r.getPosition() == null) return;
+                    // 4) پنل رندر
+                    final GamePanel panel = new GamePanel(cityMap, rescuers, victims);
+                    panel.setDrawGrid(false);
+                    panel.setDebugWalkable(false);
 
-                            int x = r.getPosition().getX();
-                            int y = r.getPosition().getY();
-                            boolean moved = false;
+                    // 5) کنترل کیبورد برای Rescuer (بدون لامبدا)
+                    DecisionInterface decision = new DecisionInterface() {
+                        @Override
+                        public Rescuer switchToNextRescuer(Rescuer current, List<Rescuer> all) {
+                            if (all == null || all.isEmpty() || current == null) return current;
+                            int idx = all.indexOf(current);
+                            if (idx < 0) return all.get(0);
+                            return all.get((idx + 1) % all.size());
+                        }
+                        @Override
+                        public Injured chooseVictim(Rescuer current, List<Injured> candidates) {
+                            return (candidates == null || candidates.isEmpty()) ? null : candidates.get(0);
+                        }
+                    };
+                    KeyHandler kh = new KeyHandler(rescuers, r1, decision, cityMap, /*collision*/ null, panel);
+                    panel.addKeyListener(kh);
 
-                            switch (e.getKeyCode()) {
-                                case KeyEvent.VK_UP:
-                                case KeyEvent.VK_W:
-                                    moved = MoveGuard.tryMoveTo(map, collisionMap, r, x, y - 1, 3);
-                                    break;
-                                case KeyEvent.VK_DOWN:
-                                case KeyEvent.VK_S:
-                                    moved = MoveGuard.tryMoveTo(map, collisionMap, r, x, y + 1, 0);
-                                    break;
-                                case KeyEvent.VK_LEFT:
-                                case KeyEvent.VK_A:
-                                    moved = MoveGuard.tryMoveTo(map, collisionMap, r, x - 1, y, 1);
-                                    break;
-                                case KeyEvent.VK_RIGHT:
-                                case KeyEvent.VK_D:
-                                    moved = MoveGuard.tryMoveTo(map, collisionMap, r, x + 1, y, 2);
-                                    break;
-                                default:
-                                    break;
-                            }
+                    // 6) فریم و نمایش
+                    JFrame f = new JFrame("City Rescue Ops — Simulation");
+                    f.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
+                    f.setLayout(new BorderLayout());
+                    f.add(panel, BorderLayout.CENTER);
+                    f.pack();
+                    f.setLocationRelativeTo(null);
+                    f.setVisible(true);
+                    panel.requestFocusInWindow();
 
-                            if (moved) gamePanel.repaint();
+                    // 7) ریپینت سبک (بدون لامبدا)
+                    javax.swing.Timer repaintTimer = new javax.swing.Timer(80, new ActionListener() {
+                        @Override public void actionPerformed(ActionEvent e) {
+                            panel.repaint();
                         }
                     });
-
-                    // 5) Frame
-                    JFrame frame = new JFrame("City Rescue Ops - Test");
-                    frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-                    frame.setLayout(new BorderLayout());
-                    frame.add(gamePanel, BorderLayout.CENTER);
-
-                    int w = Math.min(1024, map.getWidth() * map.getTileWidth());
-                    int h = Math.min(768,  map.getHeight() * map.getTileHeight());
-                    frame.setSize(Math.max(w, 640), Math.max(h, 480));
-                    frame.setLocationRelativeTo(null);
-                    frame.setVisible(true);
-
-                    SwingUtilities.invokeLater(new Runnable() {
-                        @Override public void run() { gamePanel.requestFocusInWindow(); }
-                    });
+                    repaintTimer.start();
 
                 } catch (Exception ex) {
                     ex.printStackTrace();
-                    JOptionPane.showMessageDialog(null, "خطا در لود نقشه: " + ex.getMessage());
+                    JOptionPane.showMessageDialog(null, "خطا: " + ex.getMessage(),
+                            "Error", JOptionPane.ERROR_MESSAGE);
                 }
             }
         });
     }
 
-    /** نزدیک‌ترین خانهٔ جاده از گوشهٔ پایین‌راست را برمی‌گرداند. */
-    private static Position findBottomRightRoad() {
-        if (map == null) return new Position(0, 0);
-
-        for (int y = map.getHeight() - 1; y >= 0; y--) {
-            for (int x = map.getWidth() - 1; x >= 0; x--) {
+    private static Position findFirstOfType(CityMap map, Cell.Type type) {
+        for (int y = 0; y < map.getHeight(); y++) {
+            for (int x = 0; x < map.getWidth(); x++) {
                 Cell c = map.getCell(x, y);
-
-                boolean walkable = (collisionMap != null)
-                        ? collisionMap.isWalkable(x, y)
-                        : (c != null && c.getType() == Cell.Type.ROAD);
-                boolean free = (c == null) || !c.isOccupied();
-
-                if (walkable && free) {
-                    if (c == null || c.getType() != Cell.Type.ROAD) {
-                        map.setCell(x, y, new Cell(new Position(x, y), Cell.Type.ROAD));
-                    }
-                    return new Position(x, y);
-                }
+                if (c != null && c.getType() == type) return new Position(x, y);
             }
         }
-        // اگر هیچ جاده‌ای پیدا نشد، نقطهٔ 0,0
-        return new Position(12, 12);
+        return null;
     }
 }

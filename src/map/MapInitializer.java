@@ -2,11 +2,13 @@
 package map;
 
 import util.Position;
+import util.CollisionMap;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 
 public class MapInitializer {
 
@@ -20,9 +22,65 @@ public class MapInitializer {
         }
     }
 
-    // پیکربندی
+    // پیکربندی Legacy (ماسک)
     private static final double ROAD_WHITE_RATIO = 0.55; // اگر ≥55% پیکسل‌های بلاک سفید بود → ROAD
     private static final int WHITE_SUM_THRESHOLD = 700;  // آستانه‌ی «تقریباً سفید»: r+g+b>=700 (~233*3)
+
+    /* =========================================================
+       روش جدید مبتنی بر TMX با لایه‌های باینری + KeyPoints
+       ========================================================= */
+
+    /** نسخهٔ راحت: Debris هم برای ریسکیور بلاک نشود. */
+    public static Result createFromTMX(String tmxPath) throws Exception {
+        return createFromTMX(tmxPath, /*blockDebris*/ false);
+    }
+
+    /**
+     * ساخت CityMap از TMX:
+     *  - پروفایل vehicle از CollisionLayer_Vehicle (0=راه، 1=بلاک)
+     *  - پروفایل rescuer از ObstacleMask (+DebrisMask اگر blockDebris=true)
+     *  - ورودی بیمارستان از KeyPoints/HospitalEntrance
+     */
+    public static Result createFromTMX(String tmxPath, boolean blockDebris) throws Exception {
+        // 1) رندر/گرید اصلی نقشه
+        CityMap cityMap = MapLoader.loadTMX(tmxPath);
+
+        // 2) پروفایل‌های برخورد
+        CollisionMap colVehicle = safeBinary(tmxPath, "CollisionLayer_Vehicle"); // اجباری برای ماشین
+        CollisionMap colObstacle = safeBinary(tmxPath, "ObstacleMask");          // برای ریسکیور
+        CollisionMap colDebris   = safeBinary(tmxPath, "DebrisMask");            // اختیاری
+
+        CollisionMap colRescuer = (blockDebris && colDebris != null)
+                ? CollisionMap.merge(List.of(colObstacle, colDebris))
+                : colObstacle;
+
+        // ست پروفایل‌ها روی نقشه
+        if (colVehicle != null) cityMap.setCollisionProfile("vehicle", colVehicle);
+        if (colRescuer != null) {
+            cityMap.setCollisionProfile("rescuer", colRescuer);
+            cityMap.setCollisionMap(colRescuer); // پیش‌فرض: رفتار قدیمی مبتنی بر ریسکیور
+        }
+
+        // 3) ورودی بیمارستان از KeyPoints
+        Position entrance = MapLoader.findObject(tmxPath, "KeyPoints", "HospitalEntrance");
+        int hx = (entrance != null) ? entrance.getX() : -1;
+        int hy = (entrance != null) ? entrance.getY() : -1;
+
+        return new Result(cityMap, hx, hy);
+    }
+
+    private static CollisionMap safeBinary(String tmxPath, String layer) {
+        try {
+            return CollisionMap.fromBinaryLayer(tmxPath, layer);
+        } catch (Exception ex) {
+            System.err.println("[MapInitializer] Missing or invalid layer: " + layer + " (" + ex.getMessage() + ")");
+            return null;
+        }
+    }
+
+    /* =========================================================
+       روش Legacy مبتنی بر ماسک تصویری (برای سازگاری)
+       ========================================================= */
 
     /** فقط با ماسک جاده؛ بیمارستان را دستی می‌گذاری یا بعداً ماسک جدا اضافه می‌کنی */
     public static Result createLogicMap(String roadMaskPath, int tileSize) throws IOException {
@@ -45,8 +103,7 @@ public class MapInitializer {
         int pxW = roadMask.getWidth();
         int pxH = roadMask.getHeight();
         if (pxW % tileSize != 0 || pxH % tileSize != 0)
-            throw new IOException("Mask size not divisible by tileSize=" + tileSize + " ("
-                    + pxW + "x" + pxH + ").");
+            throw new IOException("Mask size not divisible by tileSize=" + tileSize + " (" + pxW + "x" + pxH + ").");
 
         int gridW = pxW / tileSize;
         int gridH = pxH / tileSize;
@@ -102,7 +159,7 @@ public class MapInitializer {
                     int hr = (hrgb >> 16) & 0xFF;
                     int hg = (hrgb >> 8)  & 0xFF;
                     int hb = (hrgb)       & 0xFF;
-                    // هر پیکسلی که هم آلفا داشته باشد و هم روشن باشد، فعال تلقی می‌کنیم
+                    // پیکسلی که هم آلفا داشته باشد و هم روشن باشد، فعال تلقی می‌شود
                     isHospital = ha >= 16 && (hr + hg + hb) >= 96;
                 }
 
@@ -129,7 +186,6 @@ public class MapInitializer {
                 }
             }
         }
-        // اگر ماسک بیمارستان نداشتی و ورودی پیدا نشد، اصلاً ورودی تعیین نکن (اختیاری)
         return new Result(map, hx, hy);
     }
 

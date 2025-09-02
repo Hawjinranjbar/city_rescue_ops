@@ -14,6 +14,13 @@ import java.util.HashMap;
  * --------------------
  * نگه‌دارنده‌ی شبکه‌ی شهر (Tile-based) + ابزارهای کمکی حرکت/بررسی.
  * - مختصات در این کلاس «تایل‌محور» است مگر جایی که خلافش ذکر شود (Pixel).
+ *
+ * تغییرات مهم:
+ *  1) اگر CollisionMap ست شده باشد، نتیجه‌ی عبور/عدم‌عبور «فقط» بر اساس آن تعیین می‌شود
+ *     (وضعیت قبلی که روی نوع سلول fallback می‌کرد ممکن بود منجر به عبور ناخواسته شود).
+ *  2) پشتیبانی از چند پروفایل برخورد (vehicle, rescuer, ...) از طریق collisionProfiles.
+ *     متدهای کمکی: setCollisionProfile/getCollisionProfile/isWalkableFor/getWalkableNeighbors(..., profile)
+ *  3) سازگاری کامل با API قدیمی: setCollisionMap/getCollisionMap/isWalkable(...) همچنان کار می‌کند.
  */
 public class CityMap {
 
@@ -22,13 +29,16 @@ public class CityMap {
     private final int tileWidth;   // عرض هر تایل (پیکسل)
     private final int tileHeight;  // ارتفاع هر تایل (پیکسل)
     private final Cell[][] grid;   // grid[y][x]
-    private CollisionMap collisionMap;   // نگاشت برخورد (اختیاری)
+
+    // --- برخورد: پیش‌فرض + پروفایل‌ها ---
+    private CollisionMap collisionMap;                                // پروفایل پیش‌فرض (سازگاری عقب‌رو)
+    private final Map<String, CollisionMap> collisionProfiles = new HashMap<>(); // نام → نقشه برخورد
+
+    // خصوصیات تایل‌ها
     private final Map<Integer, Map<String, String>> tileProps = new HashMap<>();
 
     // --- سازنده‌ها ---
-    public CityMap(int width, int height) {
-        this(width, height, 32, 32);
-    }
+    public CityMap(int width, int height) { this(width, height, 32, 32); }
 
     public CityMap(int width, int height, int tileWidth, int tileHeight) {
         this.width = width;
@@ -98,22 +108,39 @@ public class CityMap {
         return x >= 0 && x < width && y >= 0 && y < height;
     }
 
-    // --- عبورپذیری ---
+    // --- عبورپذیری (پروفایل پیش‌فرض) ---
 
-    /** آیا تایل (x,y) قابل عبور و غیر اشغال است؟ */
+    /**
+     * آیا تایل (x,y) قابل عبور و غیر اشغال است؟
+     * اگر CollisionMap پیش‌فرض ست شده باشد، فقط بر اساس آن قضاوت می‌شود.
+     */
     public boolean isWalkable(int x, int y) {
         if (!isValid(x, y)) return false;
 
         Cell c = grid[y][x];
-        if (c == null || c.isOccupied()) return false;
+        if (c != null && c.isOccupied()) return false;
 
-        // اگر CollisionMap وجود دارد و آن سلول را قابل عبور علامت زده باشد، قبول
-        if (collisionMap != null && collisionMap.isWalkable(x, y)) {
-            return true;
+        if (collisionMap != null) {
+            // قرارداد CollisionMap: 0=عبور، 1=بلاک
+            return collisionMap.isWalkable(x, y);
         }
 
-        // در غیر این صورت، به نوع سلول تکیه می‌کنیم
-        return c.isWalkable();
+        // fallback: بر اساس نوع سلول (بدون برخورد خارجی)
+        return c != null && c.isWalkable();
+    }
+
+    /** نسخهٔ صریح با CollisionMap ورودی (بدون دست‌زدن به پروفایل پیش‌فرض). */
+    public boolean isWalkable(int x, int y, CollisionMap cm) {
+        if (!isValid(x, y)) return false;
+        Cell c = grid[y][x];
+        if (c != null && c.isOccupied()) return false;
+        if (cm != null) return cm.isWalkable(x, y);
+        return c != null && c.isWalkable();
+    }
+
+    /** بررسی بر اساس نام پروفایل (مثلاً "vehicle" یا "rescuer"). */
+    public boolean isWalkableFor(int x, int y, String profileName) {
+        return isWalkable(x, y, collisionProfiles.get(profileName));
     }
 
     /** آیا مختصات پیکسلی (px,py) روی تایلِ قابل عبور و غیر اشغال می‌افتد؟ */
@@ -126,8 +153,8 @@ public class CityMap {
     // --- همسایه‌ها ---
 
     /**
-     * برگرداندن همسایه‌های ۴جهته که هم «walkable» باشند و هم «occupied = false».
-     * خروجی: لیست Position به واحد تایل.
+     * همسایه‌های ۴جهته که هم «walkable» باشند و هم «occupied=false».
+     * از پروفایل پیش‌فرض استفاده می‌کند.
      */
     public List<Position> getWalkableNeighbors(Position pos) {
         List<Position> neighbors = new ArrayList<>();
@@ -148,6 +175,31 @@ public class CityMap {
         return neighbors;
     }
 
+    /** نسخهٔ پروفایل‌دار (مثلاً برای ماشین: profileName="vehicle"). */
+    public List<Position> getWalkableNeighbors(Position pos, String profileName) {
+        return getWalkableNeighbors(pos, collisionProfiles.get(profileName));
+    }
+
+    /** نسخهٔ CollisionMap-محور. */
+    public List<Position> getWalkableNeighbors(Position pos, CollisionMap cm) {
+        List<Position> neighbors = new ArrayList<>();
+        if (pos == null) return neighbors;
+
+        int x = pos.getX();
+        int y = pos.getY();
+
+        int[][] deltas = { {0, 1}, {1, 0}, {0, -1}, {-1, 0} };
+
+        for (int[] d : deltas) {
+            int nx = x + d[0];
+            int ny = y + d[1];
+            if (isWalkable(nx, ny, cm)) {
+                neighbors.add(new Position(nx, ny));
+            }
+        }
+        return neighbors;
+    }
+
     // --- نگاشت پیکسل <-> تایل ---
 
     public int pixelToTileX(int px) { return px / tileWidth; }
@@ -155,9 +207,22 @@ public class CityMap {
     public int tileToPixelX(int tx) { return tx * tileWidth; }
     public int tileToPixelY(int ty) { return ty * tileHeight; }
 
-    // --- تزریق/دریافت CollisionMap ---
+    // --- تزریق/دریافت CollisionMap (پیش‌فرض + پروفایل‌ها) ---
+
+    /** پروفایل پیش‌فرض (سازگاری عقب‌رو). */
     public void setCollisionMap(CollisionMap cm) { this.collisionMap = cm; }
     public CollisionMap getCollisionMap() { return collisionMap; }
+
+    /** پروفایل نام‌دار (مثلاً "vehicle", "rescuer"). */
+    public void setCollisionProfile(String name, CollisionMap cm) {
+        if (name == null) return;
+        if (cm == null) collisionProfiles.remove(name);
+        else collisionProfiles.put(name, cm);
+    }
+
+    public CollisionMap getCollisionProfile(String name) {
+        return collisionProfiles.get(name);
+    }
 
     // --- مدیریت نقشه ---
 

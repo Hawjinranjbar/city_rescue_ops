@@ -1,34 +1,42 @@
-// ui/KeyHandler.java
+// src/ui/KeyHandler.java
 package ui;
 
 import agent.Rescuer;
+import agent.Vehicle;
+import map.Cell;
 import map.CityMap;
 import playercontrol.DecisionInterface;
-import util.MoveGuard;
-import util.Position;
 import util.CollisionMap;
+import util.Position;
 
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.util.List;
 
 /**
- * --------------------
- * لایه: UI Layer
- * --------------------
  * مدیریت ورودی صفحه‌کلید:
  *  - تعویض نجات‌دهنده فعال (Tab)
- *  - اجرای عملیات (Enter)
- *  - حرکت چهارجانبه با W/A/S/D یا کلیدهای جهت
+ *  - حرکت Rescuer با Arrowها (و WASD وقتی کنترل خودرو خاموش است)
+ *  - حرکت Vehicle با WASD وقتی controlVehicle=true
  */
 public class KeyHandler extends KeyAdapter {
 
+    // ---- Rescuer ----
     private final List<Rescuer> allRescuers;
     private Rescuer currentRescuer;
     private final DecisionInterface decisionInterface;
+
+    // ---- Map / Collision ----
     private final CityMap map;
-    private final CollisionMap collisionMap;
-    private final GamePanel panel; // برای repaint بعد از حرکت
+    private final CollisionMap collisionMap; // برای Rescuer (می‌تواند null باشد)
+
+    // ---- UI ----
+    private final GamePanel panel;
+
+    // ---- Vehicle ----
+    private Vehicle vehicle;
+    private boolean controlVehicle = false;       // اگر true، WASD برای ماشین است
+    private CollisionMap vehicleCollision = null; // می‌تواند null باشد
 
     public KeyHandler(List<Rescuer> rescuers,
                       Rescuer initialRescuer,
@@ -44,58 +52,99 @@ public class KeyHandler extends KeyAdapter {
         this.panel = panel;
     }
 
+    // اتصال/تنظیم ماشین (اختیاری)
+    public void attachVehicle(Vehicle v) { this.vehicle = v; }
+    public void setControlVehicle(boolean on) { this.controlVehicle = on; }
+    public void setVehicleCollision(CollisionMap cm) { this.vehicleCollision = cm; }
+
     @Override
     public void keyPressed(KeyEvent e) {
-        if (currentRescuer == null || map == null || collisionMap == null) return;
+        boolean moved = false;
+        int code = e.getKeyCode();
+
+        // ---------- Vehicle با WASD ----------
+        if (controlVehicle && vehicle != null) {
+            Position t = vehicle.getTile();
+            if (t != null) {
+                int nx = t.getX(), ny = t.getY();
+                switch (code) {
+                    case KeyEvent.VK_W: ny--; break;
+                    case KeyEvent.VK_S: ny++; break;
+                    case KeyEvent.VK_A: nx--; break;
+                    case KeyEvent.VK_D: nx++; break;
+                }
+                if (nx != t.getX() || ny != t.getY()) {
+                    moved = tryMoveVehicle(nx, ny);
+                    if (moved && panel != null) { panel.repaint(); return; }
+                }
+            }
+        }
+
+        // ---------- کلیدهای عمومی ----------
+        if (currentRescuer == null || map == null) return;
         Position p = currentRescuer.getPosition();
         if (p == null) return;
 
-        int x = p.getX();
-        int y = p.getY();
-        boolean moved = false;
+        int x = p.getX(), y = p.getY();
 
-        int code = e.getKeyCode();
         switch (code) {
             case KeyEvent.VK_TAB:
-                currentRescuer = decisionInterface.switchToNextRescuer(currentRescuer, allRescuers);
-                System.out.println("نجات‌دهنده فعال: " + currentRescuer.getId());
+                if (decisionInterface != null) {
+                    currentRescuer = decisionInterface.switchToNextRescuer(currentRescuer, allRescuers);
+                }
                 break;
 
             case KeyEvent.VK_ENTER:
-                System.out.println("عملیات برای ریسکیور " + currentRescuer.getId());
+                // جای عملیات/اکشن
                 break;
 
-            case KeyEvent.VK_W:
+            // Arrow ها همیشه برای Rescuer
             case KeyEvent.VK_UP:
-                moved = MoveGuard.tryMoveTo(map, collisionMap, currentRescuer, x, y - 1, 3);
+                moved = util.MoveGuard.tryMoveTo(map, collisionMap, currentRescuer, x, y - 1, 3);
                 break;
-
-            case KeyEvent.VK_S:
             case KeyEvent.VK_DOWN:
-                moved = MoveGuard.tryMoveTo(map, collisionMap, currentRescuer, x, y + 1, 0);
+                moved = util.MoveGuard.tryMoveTo(map, collisionMap, currentRescuer, x, y + 1, 0);
                 break;
-
-            case KeyEvent.VK_A:
             case KeyEvent.VK_LEFT:
-                moved = MoveGuard.tryMoveTo(map, collisionMap, currentRescuer, x - 1, y, 1);
+                moved = util.MoveGuard.tryMoveTo(map, collisionMap, currentRescuer, x - 1, y, 1);
                 break;
-
-            case KeyEvent.VK_D:
             case KeyEvent.VK_RIGHT:
-                moved = MoveGuard.tryMoveTo(map, collisionMap, currentRescuer, x + 1, y, 2);
+                moved = util.MoveGuard.tryMoveTo(map, collisionMap, currentRescuer, x + 1, y, 2);
                 break;
 
-            default:
+            // اگر کنترل خودرو خاموش باشد، WASD هم برای Rescuer کار کند
+            case KeyEvent.VK_W:
+                if (!controlVehicle)
+                    moved = util.MoveGuard.tryMoveTo(map, collisionMap, currentRescuer, x, y - 1, 3);
+                break;
+            case KeyEvent.VK_S:
+                if (!controlVehicle)
+                    moved = util.MoveGuard.tryMoveTo(map, collisionMap, currentRescuer, x, y + 1, 0);
+                break;
+            case KeyEvent.VK_A:
+                if (!controlVehicle)
+                    moved = util.MoveGuard.tryMoveTo(map, collisionMap, currentRescuer, x - 1, y, 1);
+                break;
+            case KeyEvent.VK_D:
+                if (!controlVehicle)
+                    moved = util.MoveGuard.tryMoveTo(map, collisionMap, currentRescuer, x + 1, y, 2);
                 break;
         }
 
-        // فقط وقتی حرکت انجام شد، رندر مجدد کن
-        if (moved && panel != null) {
-            panel.repaint();
-        }
+        if (moved && panel != null) panel.repaint();
     }
 
-    public Rescuer getCurrentRescuer() {
-        return currentRescuer;
+    private boolean tryMoveVehicle(int nx, int ny) {
+        if (!map.isValid(nx, ny)) return false;
+        Cell dest = map.getCell(nx, ny);
+        if (dest == null || dest.isOccupied()) return false;
+
+        // محدودیت: فقط جاده (در صورت نیاز HOSPITAL را اضافه کن)
+        if (!(dest.getType() == Cell.Type.ROAD /* || dest.getType() == Cell.Type.HOSPITAL */)) {
+            return false;
+        }
+        return util.MoveGuard.tryMoveToVehicle(map, vehicleCollision, vehicle, nx, ny);
     }
+
+    public Rescuer getCurrentRescuer() { return currentRescuer; }
 }

@@ -72,7 +72,6 @@ public class Rescuer {
         // 2) محاسبهٔ اندازهٔ فریم بر اساس تعداد ستون/ردیف تعریف‌شده
         FRAME_W = Math.max(1, cropped.getWidth() / COLS);
         FRAME_H = Math.max(1, cropped.getHeight() / ROWS);
-        // System.out.println("[Rescuer] frame size: " + FRAME_W + "x" + FRAME_H);
 
         // 3) برش و شفاف‌سازی هر فریم
         frames = new BufferedImage[4][COLS]; // 4 جهت (UP بعداً پر می‌شود)
@@ -180,6 +179,13 @@ public class Rescuer {
         }
     }
 
+    /** فراخوانی استاندارد بعد از یک حرکت موفق: موقعیت + جهت + انیمیشن */
+    public void onMoveStep(int newX, int newY, int dir) {
+        setPositionXY(newX, newY);
+        setDirection(dir);
+        nextFrame();
+    }
+
     public boolean isBusy() { return isBusy; }
 
     public void pickUp(Injured victim) {
@@ -217,7 +223,7 @@ public class Rescuer {
         BufferedImage[][] grid = scaledCache.get(tileSize);
         if (grid == null) {
             int rows = frames.length;
-            int cols = frames[0].length;
+            int cols = COLS;
             grid = new BufferedImage[rows][cols];
             for (int r = 0; r < rows; r++) {
                 for (int c = 0; c < cols; c++) {
@@ -259,6 +265,7 @@ public class Rescuer {
     }
 
     public void setDirection(int dir) { this.direction = clamp(dir, 0, 3); }
+    public void faceTo(int dir) { setDirection(dir); } // نام مستعار کاربردی
     public int getDirection() { return direction; }
 
     public void nextFrame() {
