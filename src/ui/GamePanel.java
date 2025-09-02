@@ -1,6 +1,7 @@
 package ui;
 
 import agent.Rescuer;
+import agent.Vehicle;
 import map.Cell;
 import map.CityMap;
 import util.AssetLoader;
@@ -26,6 +27,7 @@ public class GamePanel extends JPanel {
     private CityMap cityMap;
     private List<Rescuer> rescuers;
     private List<Injured> victims;
+    private Vehicle vehicle;
     private final Map<InjurySeverity, BufferedImage> victimSprites =
             new EnumMap<InjurySeverity, BufferedImage>(InjurySeverity.class);
 
@@ -104,6 +106,7 @@ public class GamePanel extends JPanel {
         if (debugWalkable) drawWalkableOverlay(gWorld);
         drawVictims(gWorld);
         drawRescuers(gWorld);
+        drawVehicle(gWorld);
         if (drawGrid) drawGridLines(gWorld);
 
         gWorld.dispose();
@@ -157,7 +160,7 @@ public class GamePanel extends JPanel {
         if (victims == null) return;
         for (int i = 0; i < victims.size(); i++) {
             Injured inj = victims.get(i);
-            if (inj == null || inj.isDead() || inj.isRescued()) continue;
+            if (inj == null || inj.isDead() || inj.isRescued() || inj.isBeingRescued()) continue;
             Position p = inj.getPosition();
             if (p == null) continue;
 
@@ -246,6 +249,7 @@ public class GamePanel extends JPanel {
         for (int i = 0; i < rescuers.size(); i++) {
             Rescuer r = rescuers.get(i);
             if (r == null || r.getPosition() == null) continue;
+            if (r.isBusy()) continue;
 
             Position pos = r.getPosition();
             if (pos.getX() < viewX || pos.getX() >= viewX + viewWidth ||
@@ -266,6 +270,19 @@ public class GamePanel extends JPanel {
                 g2.fillRect(drawX, drawY, size, size);
             }
         }
+    }
+
+    private void drawVehicle(Graphics2D g2) {
+        if (vehicle == null || vehicle.getTile() == null) return;
+        Position t = vehicle.getTile();
+        if (t.getX() < viewX || t.getX() >= viewX + viewWidth ||
+                t.getY() < viewY || t.getY() >= viewY + viewHeight) return;
+        int baseX = t.getX() * tileSize;
+        int baseY = t.getY() * tileSize;
+        g2.setColor(Color.WHITE);
+        g2.fillRect(baseX, baseY, tileSize, tileSize);
+        g2.setColor(Color.RED);
+        g2.fillRect(baseX + tileSize/4, baseY + tileSize/4, tileSize/2, tileSize/2);
     }
 
     private void drawWalkableOverlay(Graphics g) {
@@ -307,6 +324,8 @@ public class GamePanel extends JPanel {
         revalidate();
         repaint();
     }
+
+    public void setVehicle(Vehicle v) { this.vehicle = v; repaint(); }
 
     public void setTileSize(int tileSize) {
         if (tileSize <= 0) return;

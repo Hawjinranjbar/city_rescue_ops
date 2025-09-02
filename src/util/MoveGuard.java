@@ -89,7 +89,11 @@ public final class MoveGuard {
         if (dest.isOccupied()) return false;
         if (dest.isHospital()) return false;
 
+
+        boolean passByType = dest.isRoad();
+
         boolean passByType = isRoadCell(dest); // وسایل نقلیه: فقط جاده
+
         boolean passByCollision = (vehicleCM == null) || vehicleCM.isWalkable(nx, ny);
         if (!passByType || !passByCollision) return false;
 
