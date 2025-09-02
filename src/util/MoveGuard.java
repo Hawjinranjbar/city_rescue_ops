@@ -74,7 +74,7 @@ public final class MoveGuard {
         if (dest.isOccupied()) return false;
         if (dest.isHospital()) return false;
 
-        boolean passByType = dest.isWalkable();
+        boolean passByType = dest.isRoad();
         boolean passByCollision = (vehicleCM == null) || vehicleCM.isWalkable(nx, ny);
         if (!passByType || !passByCollision) return false;
 
