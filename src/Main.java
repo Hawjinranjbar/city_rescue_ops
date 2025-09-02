@@ -2,6 +2,7 @@ import agent.Rescuer;
 import controller.ScoreManager;
 import map.Cell;
 import map.CityMap;
+import map.Hospital;
 import map.MapLoader;
 import playercontrol.DecisionInterface;
 import ui.GamePanel;
@@ -41,16 +42,8 @@ public class Main {
                     // 1) لود نقشه از TMX
                     CityMap cityMap = MapLoader.loadTMX(TMX_PATH);
 
-                    // 1.1) لود CollisionMap (اختیاری)
-                    CollisionMap collisionMap = null;
-                    try {
-                        collisionMap = CollisionMap.fromTMX(TMX_PATH);
-                        if (collisionMap != null) {
-                            try { cityMap.setCollisionMap(collisionMap); } catch (Throwable ignored) {}
-                        }
-                    } catch (Throwable ex) {
-                        System.err.println("[WARN] CollisionMap load failed: " + ex.getMessage());
-                    }
+                    // 1.1) لود CollisionMap به‌صورت ایمن (فقط یک‌بار مقدار می‌گیرد)
+                    final CollisionMap collisionMap = safeLoadCollisionMap(TMX_PATH, cityMap);
 
                     // 2) اسپاون «فقط روی ROAD»
                     Position preferred = new Position(cityMap.getWidth() - 2, cityMap.getHeight() - 2);
@@ -81,7 +74,7 @@ public class Main {
                     final HUDPanel hud = new HUDPanel();
                     hud.updateHUD(ScoreManager.getScore(), rescuedCount, deadCount);
 
-                    // 6) کنترل کیبورد
+                    // 6) کنترل کیبورد (بدون لامبدا)
                     DecisionInterface decision = new DecisionInterface() {
                         @Override
                         public Rescuer switchToNextRescuer(Rescuer current, List<Rescuer> all) {
@@ -125,7 +118,6 @@ public class Main {
                             for (int i = 0; i < victims.size(); i++) {
                                 Injured v = victims.get(i);
                                 if (v == null) continue;
-                                // اگر هنوز نجات/مرگ نخورده، به‌روز شود
                                 if (!v.isRescued() && !v.isDead()) {
                                     boolean diedNow = v.updateAndCheckDeath();
                                     if (diedNow) {
@@ -167,12 +159,25 @@ public class Main {
         });
     }
 
+    /** لود ایمن CollisionMap: در صورت خطا null برمی‌گرداند و cityMap را هم ست می‌کند. */
+    private static CollisionMap safeLoadCollisionMap(String tmxPath, CityMap cityMap) {
+        try {
+            CollisionMap cm = CollisionMap.fromTMX(tmxPath);
+            if (cm != null) {
+                try { cityMap.setCollisionMap(cm); } catch (Throwable ignored) {}
+            }
+            return cm;
+        } catch (Throwable ex) {
+            System.err.println("[WARN] CollisionMap load failed: " + ex.getMessage());
+            return null;
+        }
+    }
+
     /** --- اسپاون مجروح روی آوار/خودروهای خراب (OBSTACLE) --- */
     private static List<Injured> spawnVictimsOnRubble(CityMap map, int count, int minDistFromRescuer, Rescuer rescuer) {
         List<Position> rubble = new ArrayList<Position>();
         int w = map.getWidth(), h = map.getHeight();
 
-        // جمع‌آوری تایل‌های OBSTACLE که اشغال نشده‌اند
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 Cell c = map.getCell(x, y);
@@ -213,7 +218,6 @@ public class Main {
             else if (placed % 3 == 1) sev = InjurySeverity.MEDIUM;
             else sev = InjurySeverity.LOW;
 
-            // زمان اولیه بر اساس شدت: (CRITICAL=60, MEDIUM=120, LOW=180)
             int ttl = (sev == InjurySeverity.CRITICAL) ? 60
                     : (sev == InjurySeverity.MEDIUM) ? 120 : 180;
 
