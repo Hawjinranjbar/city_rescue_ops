@@ -19,22 +19,28 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * پنل رندر بازی: نقشه، نجات‌دهنده‌ها و مجروح‌ها (بدون Vehicle).
- * با HUD تایمر بالای سر مجروح‌ها.
+ * پنل رندر: نقشه، ریسکیورها، مجروح‌ها. Vehicle این‌جا رندر نمی‌شود.
  */
 public class GamePanel extends JPanel {
 
     private CityMap cityMap;
     private List<Rescuer> rescuers;
     private List<Injured> victims;
+
+    // فقط برای سازگاری با KeyHandler نگه می‌داریم؛ رندر نمی‌کنیم
     private Vehicle vehicle;
+
     private final Map<InjurySeverity, BufferedImage> victimSprites =
             new EnumMap<InjurySeverity, BufferedImage>(InjurySeverity.class);
 
     private int tileSize = 32;
     private boolean drawGrid = false;
-    private double rescuerScale = 2.0;
+
+    // --- اندازه‌ها ---
+    private double rescuerScale = 2.0;   // اسکیل پیاده
+    private double ambulanceScale = 4.0; // ✅ اسکیل آمبولانس (۳ برابر)
     private double victimScale  = 3.0;
+
     private boolean debugWalkable = false;
     private boolean showVictimTimers = true;
 
@@ -106,7 +112,7 @@ public class GamePanel extends JPanel {
         if (debugWalkable) drawWalkableOverlay(gWorld);
         drawVictims(gWorld);
         drawRescuers(gWorld);
-        drawVehicle(gWorld);
+        // Vehicle را اینجا نمی‌کشیم
         if (drawGrid) drawGridLines(gWorld);
 
         gWorld.dispose();
@@ -194,24 +200,20 @@ public class GamePanel extends JPanel {
         }
     }
 
-    /** HUD شمارش‌معکوس بالای سر هر مجروح: متن هم‌رنگ با وضعیت (سبز/زرد/قرمز) + دورنویسی مشکی. */
     private void drawVictimTimerHUD(Graphics2D g2, Injured inj, int baseX, int baseY, int spriteW) {
         int barWidth = (int) (tileSize * 0.9);
         int barHeight = Math.max(6, (int) (tileSize * 0.18));
         int x = baseX + (tileSize - barWidth) / 2;
         int y = baseY - 6;
 
-        // پس‌زمینهٔ نوار
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g2.setColor(new Color(0, 0, 0, 140));
         g2.fillRoundRect(x, y - barHeight, barWidth, barHeight, 6, 6);
 
-        // درصد باقیمانده
         float pct = inj.getTimePercent();
         pct = Math.max(0f, Math.min(1f, pct));
         int filled = (int) (barWidth * pct);
 
-        // رنگ نوار: سبز→زرد→قرمز
         Color fill;
         if (pct > 0.6f) fill = new Color(50, 205, 50);
         else if (pct > 0.3f) fill = new Color(255, 193, 7);
@@ -220,7 +222,6 @@ public class GamePanel extends JPanel {
         g2.setColor(fill);
         g2.fillRoundRect(x+1, y - barHeight + 1, Math.max(0, filled - 2), barHeight - 2, 6, 6);
 
-        // متن ثانیهٔ باقی‌مانده (بزرگ‌تر + هم‌رنگ با وضعیت)
         String txt = String.valueOf(Math.max(0, inj.getRemainingTime()));
         Font old = g2.getFont();
         Font f = old.deriveFont(Font.BOLD, Math.max(14f, tileSize * 0.6f));
@@ -232,11 +233,8 @@ public class GamePanel extends JPanel {
         int tx = x + (barWidth - tw) / 2;
         int ty = y - barHeight/2 + th/2;
 
-        // دورنویسی مشکی برای خوانایی روی هر پس‌زمینه
         g2.setColor(new Color(0, 0, 0, 200));
         g2.drawString(txt, tx + 1, ty + 1);
-
-        // رنگ متن مطابق وضعیت
         g2.setColor(fill);
         g2.drawString(txt, tx, ty);
 
@@ -249,40 +247,35 @@ public class GamePanel extends JPanel {
         for (int i = 0; i < rescuers.size(); i++) {
             Rescuer r = rescuers.get(i);
             if (r == null || r.getPosition() == null) continue;
-            if (r.isBusy()) continue;
 
+            // همیشه بکش؛ در حالت آمبولانس از اسپرایت آمبولانس استفاده می‌شود
             Position pos = r.getPosition();
             if (pos.getX() < viewX || pos.getX() >= viewX + viewWidth ||
                     pos.getY() < viewY || pos.getY() >= viewY + viewHeight) continue;
 
             int baseX = pos.getX() * tileSize;
             int baseY = pos.getY() * tileSize;
-            int size = (int) Math.round(tileSize * rescuerScale);
 
-            Image sprite = r.getSpriteScaled(size);
+            // ✅ اندازهٔ مخصوص آمبولانس
+            boolean isAmb = false;
+            try { isAmb = r.isAmbulanceMode(); } catch (Throwable ignored) {}
+            double scale = isAmb ? ambulanceScale : rescuerScale;
+
+            int size = (int) Math.round(tileSize * scale);
+            BufferedImage sprite = r.getSpriteScaled(size);
+
+            // پای تایل را لنگر کن (برای اسپرایت‌های بزرگ‌تر از تایل)
             int drawX = baseX + (tileSize - size) / 2;
             int drawY = baseY + (tileSize - size);
 
             if (sprite != null) {
                 g2.drawImage(sprite, drawX, drawY, size, size, null);
             } else {
-                g2.setColor(new Color(0, 70, 200));
+                // فالی‌بک: اگر به هر دلیل null بود، دیده شود
+                g2.setColor(isAmb ? new Color(200, 0, 0) : new Color(0, 70, 200));
                 g2.fillRect(drawX, drawY, size, size);
             }
         }
-    }
-
-    private void drawVehicle(Graphics2D g2) {
-        if (vehicle == null || vehicle.getTile() == null) return;
-        Position t = vehicle.getTile();
-        if (t.getX() < viewX || t.getX() >= viewX + viewWidth ||
-                t.getY() < viewY || t.getY() >= viewY + viewHeight) return;
-        int baseX = t.getX() * tileSize;
-        int baseY = t.getY() * tileSize;
-        g2.setColor(Color.WHITE);
-        g2.fillRect(baseX, baseY, tileSize, tileSize);
-        g2.setColor(Color.RED);
-        g2.fillRect(baseX + tileSize/4, baseY + tileSize/4, tileSize/2, tileSize/2);
     }
 
     private void drawWalkableOverlay(Graphics g) {
@@ -325,7 +318,7 @@ public class GamePanel extends JPanel {
         repaint();
     }
 
-    public void setVehicle(Vehicle v) { this.vehicle = v; repaint(); }
+    public void setVehicle(Vehicle v) { this.vehicle = v; repaint(); } // رندرش نمی‌کنیم
 
     public void setTileSize(int tileSize) {
         if (tileSize <= 0) return;
@@ -336,7 +329,9 @@ public class GamePanel extends JPanel {
         repaint();
     }
 
+    // 🔧 در صورت نیاز قابل تغییر از بیرون:
     public void setRescuerScale(double scale) { if (scale > 0) { this.rescuerScale = scale; repaint(); } }
+    public void setAmbulanceScale(double scale) { if (scale > 0) { this.ambulanceScale = scale; repaint(); } }
     public void setVictimScale(double scale)  { if (scale > 0) { this.victimScale  = scale; loadVictimSprites(); repaint(); } }
     public void setVictimOffset(int xOffset, int yOffset) { this.victimXOffset = xOffset; this.victimYOffset = yOffset; repaint(); }
     public void setDebugWalkable(boolean on) { this.debugWalkable = on; repaint(); }

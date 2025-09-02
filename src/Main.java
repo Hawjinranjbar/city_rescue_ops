@@ -2,7 +2,6 @@ import agent.Rescuer;
 import controller.ScoreManager;
 import map.Cell;
 import map.CityMap;
-import map.Hospital;
 import map.MapLoader;
 import playercontrol.DecisionInterface;
 import ui.GamePanel;
@@ -17,13 +16,14 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Queue;
 import java.util.Random;
-import java.util.Set;
 
 public class Main {
 
@@ -33,7 +33,6 @@ public class Main {
     // شمارش‌ها برای HUD
     private static int rescuedCount = 0;
     private static int deadCount = 0;
-    private static Set<Integer> rewardedRescues = new HashSet<Integer>();
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(new Runnable() {
@@ -42,7 +41,11 @@ public class Main {
                     // 1) لود نقشه از TMX
                     CityMap cityMap = MapLoader.loadTMX(TMX_PATH);
 
-                    // 1.1) لود CollisionMap به‌صورت ایمن (فقط یک‌بار مقدار می‌گیرد)
+                    // 1.1) RoadMask و HospitalMask را از TMX بخوان و داخل CityMap ست کن
+                    ensureRoadMaskLoadedFromTMX(cityMap, TMX_PATH);
+                    ensureHospitalMaskLoadedFromTMX(cityMap, TMX_PATH);
+
+                    // 1.2) لود CollisionMap به‌صورت ایمن
                     final CollisionMap collisionMap = safeLoadCollisionMap(TMX_PATH, cityMap);
 
                     // 2) اسپاون «فقط روی ROAD»
@@ -61,7 +64,7 @@ public class Main {
                     cityMap.setOccupied(spawn.getX(), spawn.getY(), true);
 
                     // 4) اسپاون مجروح‌ها روی آوار/خودروهای خراب (OBSTACLE)
-                    List<Injured> victims = spawnVictimsOnRubble(cityMap, /*count*/ 10, /*minDistFromRescuer*/ 2, r1);
+                    final List<Injured> victims = spawnVictimsOnRubble(cityMap, /*count*/ 10, /*minDistFromRescuer*/ 2, r1);
 
                     // 5) پنل‌های UI
                     final GamePanel panel = new GamePanel(cityMap, rescuers, victims);
@@ -69,7 +72,7 @@ public class Main {
                     panel.setDebugWalkable(false);
                     panel.setFocusable(true);
 
-                    // امتیاز اولیه به 500 بازنشانی شود و در HUD نمایش یابد
+                    // امتیاز اولیه
                     ScoreManager.resetToDefault();
                     final HUDPanel hud = new HUDPanel();
                     hud.updateHUD(ScoreManager.getScore(), rescuedCount, deadCount);
@@ -88,9 +91,11 @@ public class Main {
                             return (candidates == null || candidates.isEmpty()) ? null : candidates.get(0);
                         }
                     };
-                    KeyHandler kh = new KeyHandler(rescuers, r1, decision, cityMap, collisionMap, panel, victims);
+
+                    // KeyHandler با HUD (۸ آرگومان)
+                    KeyHandler kh = new KeyHandler(rescuers, r1, decision, cityMap, collisionMap, panel, victims, hud);
                     panel.addKeyListener(kh);
-                    kh.setVehicleCollision(collisionMap);
+                    kh.setVehicleCollision(collisionMap); // اگر خواستی آزاد باشد: kh.setVehicleCollision(null);
 
                     // 7) فریم و چیدمان
                     JFrame f = new JFrame("City Rescue Ops — Simulation");
@@ -111,7 +116,7 @@ public class Main {
                     });
                     repaintTimer.start();
 
-                    // 9) تایمر منطقیِ مجروح‌ها: هر ۱ ثانیه
+                    // 9) تایمر منطقیِ مجروح‌ها: هر ۱ ثانیه (بدون پاداشِ دوباره؛ پاداش در لحظهٔ تحویل داده می‌شود)
                     javax.swing.Timer victimTimer = new javax.swing.Timer(1000, new ActionListener() {
                         @Override public void actionPerformed(ActionEvent e) {
                             // تیک تایمر و تشخیص مرگ‌ها
@@ -122,29 +127,21 @@ public class Main {
                                     boolean diedNow = v.updateAndCheckDeath();
                                     if (diedNow) {
                                         deadCount++;
-                                        // جریمه بر اساس 2×زمان اولیه
                                         ScoreManager.applyDeathPenalty(v);
                                     }
                                 }
                             }
 
-                            // شمارش نجات‌یافته‌ها و پاداش برای نجات‌های جدید
+                            // شمارش نجات‌یافته‌ها
                             int resc = 0;
                             for (int i = 0; i < victims.size(); i++) {
                                 Injured v = victims.get(i);
-                                if (v != null && v.isRescued()) {
-                                    resc++;
-                                    if (!rewardedRescues.contains(v.getId())) {
-                                        ScoreManager.applyRescueReward(v);
-                                        rewardedRescues.add(v.getId());
-                                    }
-                                }
+                                if (v != null && v.isRescued()) resc++;
                             }
                             rescuedCount = resc;
 
                             // HUD را با امتیاز سراسری به‌روز کن
                             hud.updateHUD(ScoreManager.getScore(), rescuedCount, deadCount);
-                            // رندر مجدد
                             panel.repaint();
                         }
                     });
@@ -171,6 +168,125 @@ public class Main {
             System.err.println("[WARN] CollisionMap load failed: " + ex.getMessage());
             return null;
         }
+    }
+
+    /** RoadMask را از TMX می‌خواند و در CityMap ست می‌کند (CSV → int[][] → setRoadMaskFromInts). */
+    private static void ensureRoadMaskLoadedFromTMX(CityMap map, String tmxPath) {
+        try {
+            Object existing = map.getBinaryLayer("RoadMask");
+            if (existing instanceof boolean[][]) {
+                int cnt = countTrue((boolean[][]) existing);
+                System.out.println("[RoadMask] already present. road-tiles=" + cnt);
+                return;
+            }
+        } catch (Throwable ignored) {}
+
+        try {
+            String xml = new String(Files.readAllBytes(Paths.get(tmxPath)), StandardCharsets.UTF_8);
+            String tag = "name=\"RoadMask\"";
+            int i = xml.indexOf(tag);
+            if (i < 0) { System.err.println("[RoadMask] layer not found in TMX."); return; }
+            int layerStart = xml.lastIndexOf("<layer", i);
+            int layerEnd = xml.indexOf("</layer>", i);
+            if (layerStart < 0 || layerEnd < 0) { System.err.println("[RoadMask] malformed layer block."); return; }
+            String layerBlock = xml.substring(layerStart, layerEnd);
+            int d1 = layerBlock.indexOf("<data");
+            int d2 = layerBlock.indexOf("</data>");
+            if (d1 < 0 || d2 < 0) { System.err.println("[RoadMask] data tag not found."); return; }
+            int gt = layerBlock.indexOf('>', d1);
+            if (gt < 0 || gt >= d2) { System.err.println("[RoadMask] data tag malformed."); return; }
+            String csv = layerBlock.substring(gt + 1, d2).trim();
+            int[][] grid01 = parseCSVToGrid(csv, map.getWidth(), map.getHeight());
+            if (grid01 != null) {
+                map.setRoadMaskFromInts(grid01);
+                int cnt = countNonZero(grid01);
+                System.out.println("[RoadMask] loaded from TMX. road-tiles=" + cnt);
+            }
+        } catch (Throwable ex) {
+            System.err.println("[RoadMask] load failed: " + ex.getMessage());
+        }
+    }
+
+    /** HospitalMask را از TMX می‌خواند و در CityMap ست می‌کند. */
+    private static void ensureHospitalMaskLoadedFromTMX(CityMap map, String tmxPath) {
+        try {
+            Object existing = map.getBinaryLayer("HospitalMask");
+            if (existing instanceof boolean[][]) {
+                int cnt = countTrue((boolean[][]) existing);
+                System.out.println("[HospitalMask] already present. tiles=" + cnt);
+                return;
+            }
+        } catch (Throwable ignored) {}
+
+        try {
+            String xml = new String(Files.readAllBytes(Paths.get(tmxPath)), StandardCharsets.UTF_8);
+            String tag = "name=\"HospitalMask\"";
+            int i = xml.indexOf(tag);
+            if (i < 0) { System.err.println("[HospitalMask] layer not found in TMX."); return; }
+            int layerStart = xml.lastIndexOf("<layer", i);
+            int layerEnd = xml.indexOf("</layer>", i);
+            if (layerStart < 0 || layerEnd < 0) { System.err.println("[HospitalMask] malformed layer block."); return; }
+            String layerBlock = xml.substring(layerStart, layerEnd);
+            int d1 = layerBlock.indexOf("<data");
+            int d2 = layerBlock.indexOf("</data>");
+            if (d1 < 0 || d2 < 0) { System.err.println("[HospitalMask] data tag not found."); return; }
+            int gt = layerBlock.indexOf('>', d1);
+            if (gt < 0 || gt >= d2) { System.err.println("[HospitalMask] data tag malformed."); return; }
+            String csv = layerBlock.substring(gt + 1, d2).trim();
+            int[][] grid01 = parseCSVToGrid(csv, map.getWidth(), map.getHeight());
+            if (grid01 != null) {
+                map.setHospitalMaskFromInts(grid01);
+                int cnt = countNonZero(grid01);
+                System.out.println("[HospitalMask] loaded from TMX. tiles=" + cnt);
+            }
+        } catch (Throwable ex) {
+            System.err.println("[HospitalMask] load failed: " + ex.getMessage());
+        }
+    }
+
+    /** پارس CSV به آرایهٔ [height][width] با ۰/۱. */
+    private static int[][] parseCSVToGrid(String csv, int width, int height) {
+        if (csv == null) return null;
+        String[] lines = csv.split("\\r?\\n");
+        int[][] out = new int[height][width];
+        int y = 0;
+        for (int li = 0; li < lines.length && y < height; li++) {
+            String line = lines[li].trim();
+            if (line.length() == 0) continue;
+            String[] toks = line.split(",");
+            int x = 0;
+            for (int ti = 0; ti < toks.length && x < width; ti++) {
+                String t = toks[ti].trim();
+                if (t.length() == 0) continue;
+                try {
+                    int v = Integer.parseInt(t);
+                    out[y][x] = (v != 0) ? 1 : 0;
+                } catch (NumberFormatException nfe) {
+                    out[y][x] = 0;
+                }
+                x++;
+            }
+            y++;
+        }
+        return out;
+    }
+
+    private static int countNonZero(int[][] a) {
+        int c = 0;
+        if (a == null) return 0;
+        for (int y = 0; y < a.length; y++)
+            for (int x = 0; x < a[y].length; x++)
+                if (a[y][x] != 0) c++;
+        return c;
+    }
+
+    private static int countTrue(boolean[][] a) {
+        int c = 0;
+        if (a == null) return 0;
+        for (int y = 0; y < a.length; y++)
+            for (int x = 0; x < a[y].length; x++)
+                if (a[y][x]) c++;
+        return c;
     }
 
     /** --- اسپاون مجروح روی آوار/خودروهای خراب (OBSTACLE) --- */
@@ -232,7 +348,7 @@ public class Main {
         return out;
     }
 
-    /** BFS: نزدیک‌ترین کاشی ROAD به نقطهٔ ترجیحی. */
+    /** BFS: نزدیک‌ترین کاشی ROAD به نقطهٔ ترجیحی (اولویت با RoadMask). */
     private static Position findNearestRoad(CityMap map, Position preferred) {
         if (preferred == null) return null;
         int px = clamp(preferred.getX(), 0, map.getWidth() - 1);
@@ -240,10 +356,7 @@ public class Main {
 
         // اگر خودش ROAD بود
         if (map.isValid(px, py)) {
-            Cell c0 = map.getCell(px, py);
-            if (c0 != null && c0.getType() == Cell.Type.ROAD) {
-                return new Position(px, py);
-            }
+            if (safeIsRoad(map, px, py)) return new Position(px, py);
         }
 
         boolean[][] vis = new boolean[map.getHeight()][map.getWidth()];
@@ -258,11 +371,8 @@ public class Main {
             Position cur = q.poll();
             int cx = cur.getX(), cy = cur.getY();
 
-            if (map.isValid(cx, cy)) {
-                Cell c = map.getCell(cx, cy);
-                if (c != null && c.getType() == Cell.Type.ROAD) {
-                    return new Position(cx, cy);
-                }
+            if (map.isValid(cx, cy) && safeIsRoad(map, cx, cy)) {
+                return new Position(cx, cy);
             }
 
             for (int i = 0; i < 4; i++) {
@@ -277,17 +387,23 @@ public class Main {
         return null;
     }
 
-    /** اسکن سادهٔ کل نقشه برای یافتن اولین ROAD. */
+    /** اسکن سادهٔ کل نقشه برای یافتن اولین ROAD (اولویت با RoadMask). */
     private static Position scanFirstRoad(CityMap map) {
         for (int y = 0; y < map.getHeight(); y++) {
             for (int x = 0; x < map.getWidth(); x++) {
-                Cell c = map.getCell(x, y);
-                if (c != null && c.getType() == Cell.Type.ROAD) {
-                    return new Position(x, y);
-                }
+                if (safeIsRoad(map, x, y)) return new Position(x, y);
             }
         }
         return null;
+    }
+
+    /** true اگر RoadMask حاضر باشد و (x,y) جاده باشد؛ در غیر این‌صورت فالبک به Cell.Type.ROAD */
+    private static boolean safeIsRoad(CityMap map, int x, int y) {
+        try {
+            if (map.isRoad(x, y)) return true;
+        } catch (Throwable ignored) { }
+        Cell c = map.getCell(x, y);
+        return c != null && c.getType() == Cell.Type.ROAD;
     }
 
     private static int clamp(int v, int lo, int hi) {

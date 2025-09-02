@@ -1,3 +1,4 @@
+// src/agent/Rescuer.java
 package agent;
 
 import controller.ScoreManager;
@@ -12,58 +13,36 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * --------------------
- * لایه: Domain Layer — package agent
- * --------------------
  * مدل نجات‌دهنده + مدیریت اسپرایت/انیمیشن + حالت آمبولانس.
- * - حالت عادی: اسپرایت ریسکیور
- * - نزدیک مجروح: enterAmbulanceModeWith(v) → مجروح ضمیمه می‌شود (beingRescued=true)
- * - حرکت در حالت آمبولانس: باید فقط روی جاده حرکت کند (isRoadOnlyMode() == true)
- * - نزدیک بیمارستان: deliverVictimAtHospital() → مجروح rescued + امتیاز 2×زمان اولیه
- *
- * مختصات position تایل‌محور است (x,y به واحد تایل).
+ * جهت‌ها: 0=DOWN, 1=LEFT, 2=RIGHT, 3=UP
  */
 public class Rescuer {
 
     // ====== وضعیت منطقی عامل ======
-    private final int id;                 // شناسه یکتا
-    private Position position;            // موقعیت به واحد تایل
-    private boolean isBusy;               // آیا درگیر عملیات است؟
-    private Injured carryingVictim;       // مجروحِ در حال حمل (در صورت وجود)
-
-    // حالت آمبولانس (وقتی true → فقط روی جاده باید حرکت کند)
+    private final int id;
+    private Position position;
+    private boolean isBusy;
+    private Injured carryingVictim;
     private boolean ambulanceMode;
 
     // ====== گرافیک/انیمیشن – ریسکیور ======
-    // frames[direction][frame]  →  direction: 0=DOWN, 1=LEFT, 2=RIGHT, 3=UP
-    private BufferedImage[][] rescuerFrames;
-    private int direction = 0;            // 0=پایین، 1=چپ، 2=راست، 3=بالا
-    private int currentFrame = 0;         // ستون فریم جاری
-
-    // کش فریم‌های اسکیل‌شده برحسب tileSize (برای ریسکیور)
+    private BufferedImage[][] rescuerFrames;                // [dir][frame]
+    private int direction = 0;                              // 0=DOWN,1=LEFT,2=RIGHT,3=UP
+    private int currentFrame = 0;
     private final Map<Integer, BufferedImage[][]> rescuerScaledCache = new HashMap<Integer, BufferedImage[][]>();
-
-    // پیکربندی شیت (ستون/ردیف) برای ریسکیور
-    private static final int RESCUER_COLS = 4;    // تعداد ستون‌ها
-    private static final int RESCUER_ROWS = 3;    // down/left/right ؛ up از down کپی می‌شود
-
-    // ابعاد واقعی هر فریم ریسکیور (پس از کراپ)
+    private static final int RESCUER_COLS = 4;
+    private static final int RESCUER_ROWS = 3;
     private int RESCUER_FRAME_W = 64;
     private int RESCUER_FRAME_H = 64;
-
-    // مسیر اسپرایت‌شیت‌ ریسکیور و آمبولانس
     private static final String RESCUER_SPRITE_PATH   = "assets/characters/rescuer.png";
     private static final String AMBULANCE_SPRITE_PATH = "assets/characters/Ambulance.png";
 
     // ====== گرافیک/انیمیشن – آمبولانس ======
-    // در فایل PNG تو 4 نما داریم (front/right/back/left). این‌جا به صورت grid 2×2 برش می‌زنیم:
-    // map: [DOWN(front)=0], [RIGHT=2], [UP(back)=3], [LEFT=1]
-    private BufferedImage[][] ambulanceFrames; // [dir][0] فقط یک فریم برای هر جهت
+    private BufferedImage[][] ambulanceFrames;             // [dir][0]
     private final Map<Integer, BufferedImage[][]> ambulanceScaledCache = new HashMap<Integer, BufferedImage[][]>();
     private int AMB_FRAME_W = 64;
     private int AMB_FRAME_H = 64;
 
-    // -------------------- سازنده --------------------
     public Rescuer(int id, Position startPos) {
         this.id = id;
         this.position = (startPos != null) ? startPos : new Position(0, 0);
@@ -74,7 +53,6 @@ public class Rescuer {
         loadAmbulanceSpriteSheet();
     }
 
-    // -------------------- بارگذاری اسپرایت‌شیت ریسکیور --------------------
     private void loadRescuerSpriteSheet() {
         BufferedImage sheet = AssetLoader.loadImage(RESCUER_SPRITE_PATH);
         if (sheet == null) {
@@ -89,27 +67,25 @@ public class Rescuer {
 
         RESCUER_FRAME_W = Math.max(1, cropped.getWidth() / RESCUER_COLS);
         RESCUER_FRAME_H = Math.max(1, cropped.getHeight() / RESCUER_ROWS);
-
         rescuerFrames = new BufferedImage[4][RESCUER_COLS];
 
         int tolerance = 36;
-        int r, c, sx, sy;
-        for (r = 0; r < RESCUER_ROWS; r++) {
-            for (c = 0; c < RESCUER_COLS; c++) {
-                sx = c * RESCUER_FRAME_W;
-                sy = r * RESCUER_FRAME_H;
+        for (int r = 0; r < RESCUER_ROWS; r++) {
+            for (int c = 0; c < RESCUER_COLS; c++) {
+                int sx = c * RESCUER_FRAME_W;
+                int sy = r * RESCUER_FRAME_H;
                 if (sx + RESCUER_FRAME_W <= cropped.getWidth() && sy + RESCUER_FRAME_H <= cropped.getHeight()) {
                     BufferedImage raw = cropped.getSubimage(sx, sy, RESCUER_FRAME_W, RESCUER_FRAME_H);
                     BufferedImage clear = AssetLoader.makeColorTransparent(raw, bg, tolerance);
-                    rescuerFrames[r][c] = clear; // r: 0=DOWN,1=LEFT,2=RIGHT
+                    rescuerFrames[r][c] = clear; // 0=DOWN,1=LEFT,2=RIGHT
                 }
             }
         }
 
-        // ساخت ردیف LEFT با وارونه‌سازی RIGHT اگر لازم شد
-        if ((rescuerFrames[1] == null || rescuerFrames[1][0] == null) && rescuerFrames[2][0] != null) {
+        // اگر ردیف LEFT موجود نبود، از RIGHT وارونه بساز
+        if ((rescuerFrames[1] == null || rescuerFrames[1][0] == null) && rescuerFrames[2] != null) {
             BufferedImage[] leftRow = new BufferedImage[RESCUER_COLS];
-            for (c = 0; c < RESCUER_COLS; c++) {
+            for (int c = 0; c < RESCUER_COLS; c++) {
                 if (rescuerFrames[2][c] != null) {
                     leftRow[c] = AssetLoader.flipHorizontal(rescuerFrames[2][c]);
                 }
@@ -117,23 +93,20 @@ public class Rescuer {
             rescuerFrames[1] = leftRow;
         }
 
-        // اگر ردیف UP در شیت وجود ندارد، از ردیف DOWN کپی کن
+        // اگر ردیف UP نبود، از DOWN کپی کن
         if (rescuerFrames[3] == null || rescuerFrames[3][0] == null) {
             BufferedImage[] upRow = new BufferedImage[RESCUER_COLS];
-            for (c = 0; c < RESCUER_COLS; c++) {
-                upRow[c] = rescuerFrames[0][c]; // UP = DOWN
-            }
+            for (int c = 0; c < RESCUER_COLS; c++) upRow[c] = rescuerFrames[0][c];
             rescuerFrames[3] = upRow;
         }
 
         rescuerScaledCache.clear();
     }
 
-    // -------------------- بارگذاری اسپرایت‌شیت آمبولانس --------------------
     private void loadAmbulanceSpriteSheet() {
         BufferedImage sheet = AssetLoader.loadImage(AMBULANCE_SPRITE_PATH);
         if (sheet == null) {
-            ambulanceFrames = new BufferedImage[4][1]; // فقط 1 فریم برای هر جهت
+            ambulanceFrames = new BufferedImage[4][1];
             System.err.println("[Rescuer] Ambulance sprite NOT found: " + AMBULANCE_SPRITE_PATH);
             return;
         }
@@ -142,37 +115,39 @@ public class Rescuer {
         BufferedImage cropped = AssetLoader.cropToContent(sheet, bg, 20);
         if (cropped == null) cropped = sheet;
 
-        // فایل 2×2 (front, right, back, left)
-        int cols = 2;
-        int rows = 2;
+        int cols = 2, rows = 2;
         AMB_FRAME_W = Math.max(1, cropped.getWidth() / cols);
         AMB_FRAME_H = Math.max(1, cropped.getHeight() / rows);
 
-        // بریده‌ها
-        BufferedImage front = cropSafe(cropped, 0, 0, AMB_FRAME_W, AMB_FRAME_H);                         // بالا-چپ
-        BufferedImage right = cropSafe(cropped, AMB_FRAME_W, 0, AMB_FRAME_W, AMB_FRAME_H);               // بالا-راست
-        BufferedImage back  = cropSafe(cropped, 0, AMB_FRAME_H, AMB_FRAME_W, AMB_FRAME_H);               // پایین-چپ
-        BufferedImage left  = cropSafe(cropped, AMB_FRAME_W, AMB_FRAME_H, AMB_FRAME_W, AMB_FRAME_H);     // پایین-راست
+        BufferedImage front = cropSafe(cropped, 0,            0,            AMB_FRAME_W, AMB_FRAME_H); // بالا-چپ
+        BufferedImage right = cropSafe(cropped, AMB_FRAME_W,  0,            AMB_FRAME_W, AMB_FRAME_H); // بالا-راست
+        BufferedImage back  = cropSafe(cropped, 0,            AMB_FRAME_H,  AMB_FRAME_W, AMB_FRAME_H); // پایین-چپ
+        BufferedImage left  = cropSafe(cropped, AMB_FRAME_W,  AMB_FRAME_H,  AMB_FRAME_W, AMB_FRAME_H); // پایین-راست
 
-        // شفاف‌سازی هاله‌ها
         int tolerance = 36;
         front = AssetLoader.makeColorTransparent(front, bg, tolerance);
         right = AssetLoader.makeColorTransparent(right, bg, tolerance);
         back  = AssetLoader.makeColorTransparent(back,  bg, tolerance);
         left  = AssetLoader.makeColorTransparent(left,  bg, tolerance);
 
-        // map به آرایه [dir][frameIndex]؛ فقط 1 فریم برای هر جهت
         ambulanceFrames = new BufferedImage[4][1];
-        // 0=DOWN(front)، 1=LEFT، 2=RIGHT، 3=UP(back)
-        ambulanceFrames[0][0] = front;
-        ambulanceFrames[2][0] = right;
-        ambulanceFrames[3][0] = back;
-        ambulanceFrames[1][0] = left;
+
+        // در برخی شیت‌ها برچسب چپ/راست جا‌به‌جا است؛ با این پرچم اصلاح می‌کنیم.
+        final boolean SWAP_LR = true;
+
+        ambulanceFrames[0][0] = front; // DOWN
+        if (SWAP_LR) {
+            ambulanceFrames[1][0] = right; // LEFT  ← جا‌به‌جا
+            ambulanceFrames[2][0] = left;  // RIGHT ← جا‌به‌جا
+        } else {
+            ambulanceFrames[1][0] = left;  // LEFT
+            ambulanceFrames[2][0] = right; // RIGHT
+        }
+        ambulanceFrames[3][0] = back;  // UP
 
         ambulanceScaledCache.clear();
     }
 
-    // -------------------- ابزار برش امن --------------------
     private static BufferedImage cropSafe(BufferedImage src, int x, int y, int w, int h) {
         int maxW = src.getWidth();
         int maxH = src.getHeight();
@@ -190,85 +165,62 @@ public class Rescuer {
         return v;
     }
 
-    // -------------------- API منطق بازی --------------------
+    // ----- API منطقی -----
     public int getId() { return id; }
     public Position getPosition() { return position; }
-
-    /** ست موقعیت (تایل‌محور). در صورت نیاز از MoveGuard برای چک عبور استفاده کن. */
-    public void setPosition(Position newPos) {
-        if (newPos != null) this.position = newPos;
-    }
-
-    /** تغییر سریع مختصات بدون ساخت آبجکت جدید (برای MoveGuard/انیمیشن مفید است). */
+    public void setPosition(Position newPos) { if (newPos != null) this.position = newPos; }
     public void setPositionXY(int x, int y) {
-        if (this.position == null) {
-            this.position = new Position(x, y);
-        } else {
-            this.position.setX(x);
-            this.position.setY(y);
-        }
+        if (this.position == null) this.position = new Position(x, y);
+        else { this.position.setX(x); this.position.setY(y); }
     }
-
-    /** فراخوانی استاندارد بعد از یک حرکت موفق: موقعیت + جهت + انیمیشن */
     public void onMoveStep(int newX, int newY, int dir) {
         setPositionXY(newX, newY);
         setDirection(dir);
         nextFrame();
     }
-
     public boolean isBusy() { return isBusy; }
     public boolean isCarryingVictim() { return carryingVictim != null; }
     public Injured getCarryingVictim() { return carryingVictim; }
-
-    /** آیا در حالت آمبولانس هستیم؟ (برای enforce حرکت فقط روی جاده) */
     public boolean isAmbulanceMode() { return ambulanceMode; }
 
-    /** وقتی به مجروح نزدیک شد: وارد حالت آمبولانس می‌شویم و مجروح ضمیمه می‌شود. */
+    /** ورود به حالت آمبولانس هنگام نزدیک شدن به مجروح. */
     public void enterAmbulanceModeWith(Injured victim) {
-        if (victim == null) return;
-        if (ambulanceMode) return;
-
+        if (victim == null || ambulanceMode) return;
         this.carryingVictim = victim;
         this.isBusy = true;
         this.ambulanceMode = true;
-
-        // مجروح در حال نجات است؛ از صحنه مخفی/عدم رندر (بسته به GamePanel)
         try { victim.setBeingRescued(true); } catch (Throwable ignored) {}
-
-        // انیمیشن را ریست کن تا فریم اول آمبولانس نمایش داده شود
         resetAnim();
     }
 
     /**
-     * وقتی به بیمارستان رسیدیم:
-     * - وضعیت مجروح: rescued
-     * - امتیاز: + 2 × زمان اولیه (با fallback اگر getInitialTimeLimit نباشد)
-     * - خروج از حالت آمبولانس و برگشت به ریسکیور
+     * تحویل در بیمارستان:
+     * - قربانی rescued می‌شود
+     * - امتیاز = ۲ × زمانِ باقی‌مانده‌ی فعلی
+     * - خروج از حالت آمبولانس
      */
     public void deliverVictimAtHospital() {
         if (carryingVictim == null) return;
 
         // ثبت نجات
         carryingVictim.markAsRescued();
+        try { carryingVictim.setBeingRescued(false); } catch (Throwable ignored) {}
 
-        // پاداش 2× زمان اولیه
-        int initial = safeInitialTime(carryingVictim);
-        if (initial < 0) initial = 0;
-        ScoreManager.add(2 * initial);
+        // امتیاز: دو برابر زمان باقی‌مانده‌ی فعلی
+        int remaining = 0;
+        try { remaining = Math.max(0, carryingVictim.getRemainingTime()); } catch (Throwable ignored) {}
+        ScoreManager.add(2 * remaining);
 
-        // آزادسازی
+        // پاک‌سازی وضعیت
         carryingVictim = null;
         isBusy = false;
         ambulanceMode = false;
-
-        // اطمینان از خروج از حالت در GamePanel (نمایش ریسکیور)
         resetAnim();
     }
 
-    /** اگر در میانهٔ راه منصرف شدیم یا سناریو ریست شد */
+    /** لغو حالت وسط راه (یا ریست سناریو). */
     public void cancelAmbulanceMode() {
         if (!ambulanceMode) return;
-
         if (carryingVictim != null) {
             try { carryingVictim.setBeingRescued(false); } catch (Throwable ignored) {}
         }
@@ -278,17 +230,16 @@ public class Rescuer {
         resetAnim();
     }
 
-    // -------------------- API گرافیک/انیمیشن --------------------
+    // ----- گرافیک/انیمیشن -----
     public void setDirection(int dir) { this.direction = clamp(dir, 0, 3); }
-    public void faceTo(int dir) { setDirection(dir); } // نام مستعار
+    public void faceTo(int dir) { setDirection(dir); }
     public int getDirection() { return direction; }
 
-    /** گرفتن فریم جاری (با توجه به حالت) */
     public BufferedImage getSprite() {
         if (ambulanceMode) {
             if (ambulanceFrames == null) return null;
             int dir = clamp(direction, 0, 3);
-            return ambulanceFrames[dir][0]; // یک فریم برای هر جهت
+            return ambulanceFrames[dir][0];
         } else {
             if (rescuerFrames == null) return null;
             int dir = clamp(direction, 0, 3);
@@ -298,7 +249,6 @@ public class Rescuer {
         }
     }
 
-    /** فریم جاری اسکیل‌شده به اندازهٔ tileSize (با کش داخلی و تفکیک حالت) */
     public BufferedImage getSpriteScaled(int tileSize) {
         if (tileSize <= 0) return getSprite();
 
@@ -352,30 +302,18 @@ public class Rescuer {
     }
 
     public void nextFrame() {
-        if (ambulanceMode) {
-            // آمبولانس انیمیشن قدم‌زدن ندارد؛ یک فریم ثابت در هر جهت
-            return;
-        }
+        if (ambulanceMode) return; // آمبولانس فریم راه‌رفتن ندارد
         if (rescuerFrames == null) return;
         int dir = clamp(direction, 0, 3);
         int colCount = (rescuerFrames[dir] != null) ? rescuerFrames[dir].length : 0;
         if (colCount > 0) currentFrame = (currentFrame + 1) % colCount;
     }
 
-    /** ریست کردن انیمیشن (مثلاً هنگام تعویض حالت یا شروع/پایان حرکت) */
     public void resetAnim() { currentFrame = 0; }
 
-    // -------------------- قلاب برای محدودسازی حرکت روی جاده --------------------
-    /**
-     * اگر true باشد، سیستم حرکت باید فقط روی سلول‌های «جاده» اجازه حرکت بدهد.
-     * این متد را در MoveGuard/AgentController چک کن.
-     */
-    public boolean isRoadOnlyMode() {
-        return ambulanceMode;
-    }
+    /** محدودسازی حرکت روی جاده در حالت آمبولانس */
+    public boolean isRoadOnlyMode() { return ambulanceMode; }
 
-    // -------------------- محاسبهٔ امن زمان اولیه --------------------
-    /** تلاش می‌کند getInitialTimeLimit() را بخواند؛ اگر نبود، با شدت fallback می‌کند. */
     private int safeInitialTime(Injured v) {
         if (v == null) return 0;
         try {
@@ -383,7 +321,6 @@ public class Rescuer {
             Object r = m.invoke(v);
             if (r instanceof Integer) return ((Integer) r).intValue();
         } catch (Throwable ignored) { }
-        // fallback: بر اساس شدت
         try {
             InjurySeverity sev = v.getSeverity();
             if (sev == InjurySeverity.CRITICAL) return 60;
