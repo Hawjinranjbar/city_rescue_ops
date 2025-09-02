@@ -7,6 +7,7 @@ import victim.InjurySeverity;
  * مدیریت امتیاز بازی (جهانی/Static).
  * - امتیاز شروع: 500
  * - جریمه مرگ: 2 × زمان اولیه تایمر مجروح
+ * - پاداش نجات: 2 × زمان اولیه تایمر مجروح
  * - (اختیاری) پاداش نجات بر اساس شدت
  *
  * نکته: همه‌ی متدها روی یک "score" سراسری کار می‌کنند؛
@@ -48,6 +49,20 @@ public final class ScoreManager {
         score -= (2 * initial);
     }
 
+    /** پاداش نجات بر اساس زمان اولیه (ثانیه/تیک) */
+    public static synchronized void applyRescueRewardByInitialTime(int initialSeconds) {
+        if (initialSeconds < 0) initialSeconds = 0;
+        score += (2 * initialSeconds);
+    }
+
+    /** نسخه راحت با خود آبجکت مجروح */
+    public static synchronized void applyRescueReward(Injured injured) {
+        if (injured == null) return;
+        int initial = injured.getInitialTimeLimit();
+        if (initial < 0) initial = 0;
+        score += (2 * initial);
+    }
+
     /** (اختیاری) پاداش نجات */
     public static synchronized void addRescueRewardBySeverity(InjurySeverity severity) {
         int reward = 0;
@@ -65,5 +80,7 @@ public final class ScoreManager {
     public synchronized void deductInstance(int amount) { deduct(amount); }
     public synchronized void applyDeathPenaltyByInitialTimeInstance(int s){ applyDeathPenaltyByInitialTime(s); }
     public synchronized void applyDeathPenaltyInstance(Injured injured){ applyDeathPenalty(injured); }
+    public synchronized void applyRescueRewardByInitialTimeInstance(int s){ applyRescueRewardByInitialTime(s); }
+    public synchronized void applyRescueRewardInstance(Injured injured){ applyRescueReward(injured); }
     public synchronized void addRescueRewardBySeverityInstance(InjurySeverity sev){ addRescueRewardBySeverity(sev); }
 }
