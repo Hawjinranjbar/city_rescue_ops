@@ -95,8 +95,9 @@ public class Main {
                             return (candidates == null || candidates.isEmpty()) ? null : candidates.get(0);
                         }
                     };
-                    KeyHandler kh = new KeyHandler(rescuers, r1, decision, cityMap, collisionMap, panel);
+                    KeyHandler kh = new KeyHandler(rescuers, r1, decision, cityMap, collisionMap, panel, victims);
                     panel.addKeyListener(kh);
+                    kh.setVehicleCollision(collisionMap);
 
                     // 7) فریم و چیدمان
                     JFrame f = new JFrame("City Rescue Ops — Simulation");
