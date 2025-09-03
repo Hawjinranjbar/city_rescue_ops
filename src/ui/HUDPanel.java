@@ -10,6 +10,7 @@ import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.net.URL;
 import java.util.List;
@@ -45,6 +46,7 @@ public class HUDPanel extends JPanel {
     private final JButton btnSave;
     private final JButton btnLoad;
     private final JButton btnRestart;
+    private final JButton btnAddAI;
 
     // ------------------- سازنده‌ها -------------------
     public HUDPanel() {
@@ -73,6 +75,8 @@ public class HUDPanel extends JPanel {
         btnSave    = createIconButton("assets/ui/save.png",    "Quick Save", "Save");
         btnLoad    = createIconButton("assets/ui/load.png",    "Quick Load", "Load");
         btnRestart = createIconButton("assets/ui/restart.png", "Restart",    "Restart");
+        btnAddAI   = createIconButton("assets/ui/escape.png",  "Add AI",     "AI");
+        ensureAddAIIcon();
         wireNonPauseButtons();
         addButtonsToBar();
     }
@@ -104,6 +108,8 @@ public class HUDPanel extends JPanel {
         btnSave    = createIconButton("assets/ui/save.png",    "Quick Save", "Save");
         btnLoad    = createIconButton("assets/ui/load.png",    "Quick Load", "Load");
         btnRestart = createIconButton("assets/ui/restart.png", "Restart",    "Restart");
+        btnAddAI   = createIconButton("assets/ui/escape.png",  "Add AI",     "AI");
+        ensureAddAIIcon();
         wireNonPauseButtons();
         addButtonsToBar();
     }
@@ -179,6 +185,7 @@ public class HUDPanel extends JPanel {
         controlBar.add(btnSave);
         controlBar.add(btnLoad);
         controlBar.add(btnRestart);
+        controlBar.add(btnAddAI);
         controlBar.revalidate();
         controlBar.repaint();
     }
@@ -232,6 +239,36 @@ public class HUDPanel extends JPanel {
                 try { gameEngine.restartGame(); } catch (Throwable t) { t.printStackTrace(); }
             }
         });
+        btnAddAI.addActionListener(new ActionListener() {
+            @Override public void actionPerformed(ActionEvent e) {
+                if (gameEngine == null) { System.out.println("[HUDPanel] AddAI clicked BUT gameEngine==null"); return; }
+                System.out.println("[HUDPanel] AddAI → spawnAIRescuer()");
+                try { gameEngine.spawnAIRescuer(); } catch (Throwable t) { t.printStackTrace(); }
+            }
+        });
+    }
+
+    /** اطمینان از اینکه دکمه AI همیشه یک آیکن دارد */
+    private void ensureAddAIIcon() {
+        if (btnAddAI.getIcon() == null) {
+            btnAddAI.setIcon(buildAddIcon());
+            btnAddAI.setText("");
+        }
+    }
+
+    /** آیکن پلاس سبز ساده برای افزودن نجات‌گر AI */
+    private Icon buildAddIcon() {
+        int size = 24;
+        BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setColor(new Color(40, 200, 40));
+        g.setStroke(new BasicStroke(4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        int mid = size / 2;
+        g.drawLine(mid, 4, mid, size - 4);
+        g.drawLine(4, mid, size - 4, mid);
+        g.dispose();
+        return new ImageIcon(img);
     }
 
     // ------------------- هِلپر ساخت دکمه آیکن‌دار -------------------
