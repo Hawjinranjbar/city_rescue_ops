@@ -1,5 +1,6 @@
 package util;
 
+import java.io.Serializable;
 import java.util.Objects;
 
 /**
@@ -8,8 +9,12 @@ import java.util.Objects;
  * --------------------
  * نگه‌دارندهٔ موقعیت روی شبکهٔ تایل + هِلپرهای جهت/مجاورت.
  * جهت‌ها (چهارضلعی): 0=DOWN, 1=LEFT, 2=RIGHT, 3=UP
+ *
+ * نکته: Serializable برای سازگاری با Save/Load/Restart
  */
-public class Position {
+public class Position implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     // ----- جهت‌ها مطابق کل پروژه -----
     public static final int DIR_DOWN  = 0;
@@ -49,6 +54,17 @@ public class Position {
             this.x = p.x;
             this.y = p.y;
         }
+    }
+
+    /** ست‌کردن هر دو مختصات به‌صورت مستقیم */
+    public void setXY(int x, int y) {
+        this.x = x;
+        this.y = y;
+    }
+
+    /** برگرداندن یک کپی امن (بدون تغییر شیء فعلی) */
+    public Position copy() {
+        return new Position(this);
     }
 
     // ---------- فاصله/مجاورت ----------
@@ -130,6 +146,25 @@ public class Position {
         if (dx == 1 && dy == 0)  return DIR_RIGHT;
         if (dx == 0 && dy == -1) return DIR_UP;
         return -1;
+    }
+
+    // ---------- محدوده/کنترل نقشه (اختیاری ولی مفید) ----------
+    /** آیا داخل محدودهٔ [0..width-1]×[0..height-1] هست؟ */
+    public boolean withinBounds(int width, int height) {
+        if (width <= 0 || height <= 0) return false;
+        return x >= 0 && y >= 0 && x < width && y < height;
+    }
+
+    /** مختصات را داخل محدودهٔ نقشه می‌بُرد (Clamp) */
+    public void clampToBounds(int width, int height) {
+        if (width > 0) {
+            if (x < 0) x = 0;
+            if (x >= width) x = width - 1;
+        }
+        if (height > 0) {
+            if (y < 0) y = 0;
+            if (y >= height) y = height - 1;
+        }
     }
 
     // ---------- equals/hash/toString ----------
