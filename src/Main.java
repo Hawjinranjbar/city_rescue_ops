@@ -99,7 +99,7 @@ public class Main {
                     for (Rescuer r : rescuers) { agentManager.addRescuer(r); }
                     VictimManager victimManager = new VictimManager();
                     for (Injured v : victims) { victimManager.addInjured(v); }
-                    List<Hospital> hospitals = new ArrayList<Hospital>();
+                    List<Hospital> hospitals = scanHospitalsFromMask(cityMap);
                     RescueCoordinator rescueCoordinator = new RescueCoordinator(
                             agentManager,
                             victimManager,
@@ -355,6 +355,23 @@ public class Main {
             for (int x = 0; x < a[y].length; x++)
                 if (a[y][x]) c++;
         return c;
+    }
+
+    /** تایل‌های HospitalMask را به لیست Hospital تبدیل می‌کند. */
+    private static List<Hospital> scanHospitalsFromMask(CityMap map) {
+        List<Hospital> out = new ArrayList<Hospital>();
+        if (map == null) return out;
+        int w = map.getWidth();
+        int h = map.getHeight();
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                if (map.isHospitalMask(x, y)) {
+                    out.add(new Hospital(new Position(x, y)));
+                }
+            }
+        }
+        System.out.println("[HospitalScanner] found " + out.size() + " hospitals from mask.");
+        return out;
     }
 
     /** --- اسپاون مجروح روی آوار/خودروهای خراب (OBSTACLE) --- */

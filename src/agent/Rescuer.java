@@ -36,6 +36,8 @@ public class Rescuer {
     private boolean isBusy;
     private Injured carryingVictim;
     private boolean ambulanceMode;
+    /** اگر true باشد، این نجات‌دهنده توسط هوش مصنوعی کنترل می‌شود */
+    private boolean aiControlled;
 
     /** اگر true باشد، نجات‌دهنده می‌تواند روی هر سلولی حرکت کند (نادیده گرفتن collision/occupied/hospital) */
     private boolean noClip = true; // فقط روی Rescuer اثر دارد؛ آمبولانس را تغییر نمی‌دهد
@@ -68,6 +70,7 @@ public class Rescuer {
         this.isBusy = false;
         this.carryingVictim = null;
         this.ambulanceMode = false;
+        this.aiControlled = false;
         loadRescuerSpriteSheet();
         loadAmbulanceSpriteSheet();
     }
@@ -267,6 +270,10 @@ public class Rescuer {
     /** فلگ no-clip فقط برای حرکتِ خود Rescuer (نه Vehicle). */
     public boolean isNoClip() { return noClip; }
     public void setNoClip(boolean noClip) { this.noClip = noClip; }
+
+    /** وضعیت کنترل هوش مصنوعی */
+    public boolean isAIControlled() { return aiControlled; }
+    public void setAIControlled(boolean aiControlled) { this.aiControlled = aiControlled; }
 
     // ====== عملیات حمل/تحویل ======
     public void enterAmbulanceModeWith(Injured victim) {
