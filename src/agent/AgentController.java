@@ -191,6 +191,7 @@ public class AgentController {
                                     logger.logError("AgentController.AI/PickupLog", ex);
                                 }
                             }
+                            warpAmbulanceToRoad(rescuer);
                             Thread.sleep(aiIdleDelayMs);
                             continue;
                         }
@@ -288,6 +289,52 @@ public class AgentController {
 
         List<Position> path = bfs(rescuer.getPosition(), adj, false); // walkable عادی
         if (!path.isEmpty()) moveAlongPath(rescuer, path);
+    }
+
+    /** پس از سوار کردن مجروح، آمبولانس را به نزدیک‌ترین جاده منتقل می‌کند. */
+    private void warpAmbulanceToRoad(Rescuer rescuer) {
+        if (rescuer == null) return;
+        Position road = findNearestRoad(rescuer.getPosition());
+        if (road == null) return;
+        Position cur = rescuer.getPosition();
+        if (cur != null) map.setOccupied(cur.getX(), cur.getY(), false);
+        rescuer.setTile(road.getX(), road.getY());
+        map.setOccupied(road.getX(), road.getY(), true);
+        Injured v = rescuer.getCarryingVictim();
+        if (v != null) v.setPosition(road);
+    }
+
+    /** جست‌وجوی سادهٔ BFS برای پیدا کردن نزدیک‌ترین تایل جاده. */
+    private Position findNearestRoad(Position start) {
+        if (start == null) return null;
+        int w = map.getWidth(), h = map.getHeight();
+        boolean[][] vis = new boolean[h][w];
+        ArrayDeque<Position> q = new ArrayDeque<Position>();
+        q.add(start);
+        vis[start.getY()][start.getX()] = true;
+        final int[] dx = new int[] { 0, -1, 1, 0 };
+        final int[] dy = new int[] { 1, 0, 0, -1 };
+        while (!q.isEmpty()) {
+            Position cur = q.removeFirst();
+            if (map.isValid(cur.getX(), cur.getY())) {
+                Cell c = map.getCell(cur.getX(), cur.getY());
+                if (c != null && !c.isHospital() && isRoadCell(c) && !c.isOccupied()) return cur;
+            }
+            for (int k = 0; k < 4; k++) {
+                int nx = cur.getX() + dx[k];
+                int ny = cur.getY() + dy[k];
+                if (!map.isValid(nx, ny)) continue;
+                if (vis[ny][nx]) continue;
+                vis[ny][nx] = true;
+                Cell nc = map.getCell(nx, ny);
+                if (nc == null) continue;
+                if (nc.isOccupied()) continue;
+                if (!nc.isWalkable() && !isRoadCell(nc)) continue;
+                if (collisionMap != null && !collisionMap.isWalkable(nx, ny)) continue;
+                q.addLast(new Position(nx, ny));
+            }
+        }
+        return null;
     }
 
     /* ==============================
