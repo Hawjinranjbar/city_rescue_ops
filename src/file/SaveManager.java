@@ -6,20 +6,24 @@ import java.io.*;
  * --------------------
  * لایه: File I/O Layer
  * --------------------
- * این کلاس وضعیت بازی (GameState) رو در فایل ذخیره/لود می‌کنه
- * و قابلیت quick save/load و restart رو هم فراهم می‌کنه.
+ * ذخیره/بارگذاری GameState + Quick Save/Load + Restart با اسنپ‌شات عمیق.
+ * - بدون لامبدا
+ * - سازگار با ThreadFreezeHook (اختیاری)
+ *
+ * نکته‌ی مهم: برای Restart، حتماً از deep-copy استفاده می‌کنیم
+ * تا تغییرات حین بازی روی initialState اثر نگذارد.
  */
 public class SaveManager {
 
     private final String filePath;
 
-    // مسیر پیش‌فرض quick save
+    /** مسیر پیش‌فرض quick save */
     public static final String QUICK_SAVE_PATH = "saves/quick.sav";
 
-    // نگهداری state اولیه برای ری‌استارت
+    /** اسنپ‌شات اولیه برای ری‌استارت (به‌صورت کپی عمیق نگهداری می‌شود) */
     private static GameState initialState;
 
-    // قلاب‌های pause/resume برای threadها
+    /** قلاب‌های pause/resume برای Threadها (اختیاری) */
     public interface ThreadFreezeHook {
         void pauseAll();
         void resumeAll();
@@ -38,28 +42,38 @@ public class SaveManager {
         freezeHook = hook;
     }
 
+    /**
+     * ثبت وضعیت اولیه برای Restart.
+     * ⚠️ با کپیِ عمیق ذخیره می‌شود تا بعداً آلوده نشود.
+     */
     public static void setInitialState(GameState state) {
-        initialState = state;
+        initialState = deepCopy(state);
     }
 
+    /**
+     * دریافت اسنپ‌شات اولیه.
+     * ⚠️ یک کپیِ عمیق برمی‌گردانیم تا دست‌کاری نشود.
+     */
     public static GameState getInitialState() {
-        return initialState;
+        return deepCopy(initialState);
     }
 
     // ------------------------
-    // ذخیره در مسیر پیش‌فرضِ این شیء
+    // ذخیره در مسیر پیش‌فرض شیء
     // ------------------------
-    public void saveGame(GameState gameState) {
-        saveGameToPath(gameState, this.filePath);
+    public boolean saveGame(GameState gameState) {
+        return saveGameToPath(gameState, this.filePath);
     }
 
     // ------------------------
     // ذخیره در مسیر مشخص
     // ------------------------
-    public static void saveGameToPath(GameState gameState, String path) {
+    public static boolean saveGameToPath(GameState gameState, String path) {
         ensureDir(path);
+        if (freezeHook != null) {
+            try { freezeHook.pauseAll(); } catch (Throwable ignored) {}
+        }
 
-        if (freezeHook != null) freezeHook.pauseAll();
         ObjectOutputStream oos = null;
         try {
             FileOutputStream fos = new FileOutputStream(path);
@@ -67,13 +81,15 @@ public class SaveManager {
             oos.writeObject(gameState);
             oos.flush();
             System.out.println("بازی با موفقیت ذخیره شد: " + path);
+            return true;
         } catch (IOException e) {
             System.err.println("خطا در ذخیره بازی: " + e.getMessage());
+            return false;
         } finally {
-            if (oos != null) {
-                try { oos.close(); } catch (Exception ignore) {}
+            if (oos != null) { try { oos.close(); } catch (Exception ignore) {} }
+            if (freezeHook != null) {
+                try { freezeHook.resumeAll(); } catch (Throwable ignored) {}
             }
-            if (freezeHook != null) freezeHook.resumeAll();
         }
     }
 
@@ -81,7 +97,17 @@ public class SaveManager {
     // بارگذاری از مسیر مشخص
     // ------------------------
     public static GameState loadGame(String path) {
-        if (freezeHook != null) freezeHook.pauseAll();
+        // وجود فایل را چک کن
+        File f = new File(path);
+        if (!f.exists() || !f.isFile()) {
+            System.err.println("فایل ذخیره یافت نشد: " + path);
+            return null;
+        }
+
+        if (freezeHook != null) {
+            try { freezeHook.pauseAll(); } catch (Throwable ignored) {}
+        }
+
         ObjectInputStream ois = null;
         try {
             FileInputStream fis = new FileInputStream(path);
@@ -91,25 +117,25 @@ public class SaveManager {
                 System.out.println("بازی با موفقیت بارگذاری شد: " + path);
                 return (GameState) obj;
             } else {
-                System.err.println("فایل معتبر نیست.");
+                System.err.println("فایل معتبر نیست (نوع داده نادرست).");
                 return null;
             }
         } catch (Exception e) {
             System.err.println("خطا در بارگذاری بازی: " + e.getMessage());
             return null;
         } finally {
-            if (ois != null) {
-                try { ois.close(); } catch (Exception ignore) {}
+            if (ois != null) { try { ois.close(); } catch (Exception ignore) {} }
+            if (freezeHook != null) {
+                try { freezeHook.resumeAll(); } catch (Throwable ignored) {}
             }
-            if (freezeHook != null) freezeHook.resumeAll();
         }
     }
 
     // ------------------------
     // Quick Save / Load
     // ------------------------
-    public static void quickSave(GameState state) {
-        saveGameToPath(state, QUICK_SAVE_PATH);
+    public static boolean quickSave(GameState state) {
+        return saveGameToPath(state, QUICK_SAVE_PATH);
     }
 
     public static GameState quickLoad() {
@@ -117,19 +143,60 @@ public class SaveManager {
     }
 
     // ------------------------
-    // ری‌استارت بازی
+    // ری‌استارت بازی (برگرداندن اسنپ‌شات اولیه)
     // ------------------------
     public static GameState restartGame() {
-        return initialState;
+        return getInitialState(); // کپیِ عمیق
     }
 
     // ------------------------
-    // ابزار: ساخت پوشه اگر نبود
+    // ابزارها
     // ------------------------
+    /** ساخت پوشه‌ی مقصد در صورت نبودن */
     private static void ensureDir(String path) {
-        File f = new File(path).getParentFile();
-        if (f != null && !f.exists()) {
-            f.mkdirs();
+        try {
+            File f = new File(path);
+            File parent = f.getParentFile();
+            if (parent != null && !parent.exists()) {
+                boolean ok = parent.mkdirs();
+                if (!ok) {
+                    System.err.println("عدم موفقیت در ساخت پوشه: " + parent.getAbsolutePath());
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    /**
+     * کپیِ عمیق با Serialization (ساده، بدون وابستگی خارجی).
+     * برای کارکرد درست: GameState و تمام اشیای درونش باید Serializable باشند.
+     */
+    private static GameState deepCopy(GameState original) {
+        if (original == null) return null;
+        ByteArrayOutputStream bos = null;
+        ObjectOutputStream oos = null;
+        ByteArrayInputStream bis = null;
+        ObjectInputStream ois = null;
+        try {
+            bos = new ByteArrayOutputStream();
+            oos = new ObjectOutputStream(bos);
+            oos.writeObject(original);
+            oos.flush();
+
+            bis = new ByteArrayInputStream(bos.toByteArray());
+            ois = new ObjectInputStream(bis);
+            Object obj = ois.readObject();
+            if (obj instanceof GameState) {
+                return (GameState) obj;
+            }
+        } catch (Exception e) {
+            System.err.println("deepCopy خطا: " + e.getMessage());
+        } finally {
+            if (oos != null) { try { oos.close(); } catch (Exception ignore) {} }
+            if (bos != null) { try { bos.close(); } catch (Exception ignore) {} }
+            if (ois != null) { try { ois.close(); } catch (Exception ignore) {} }
+            if (bis != null) { try { bis.close(); } catch (Exception ignore) {} }
         }
+        // اگر کپی عمیق نشد، حداقل ارجاع را برگردان—but discouraged
+        return original;
     }
 }

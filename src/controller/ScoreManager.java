@@ -15,18 +15,35 @@ import victim.InjurySeverity;
  */
 public final class ScoreManager {
 
-    private static final int DEFAULT_SCORE = 500;
+    private static int DEFAULT_SCORE = 500;
     private static int score = DEFAULT_SCORE;
 
-    // ===== متدهای سراسری (ترجیحی) =====
+    private ScoreManager() { }
+
+    // ===== دسترسی و تنظیم مقدار =====
     public static synchronized int getScore() {
         return score;
+    }
+
+    /** ست‌کردن مستقیم امتیاز (برای Load/Restart از GameState) */
+    public static synchronized void setScore(int newScore) {
+        score = newScore;
+    }
+
+    /** اگر خواستی مقدار پیش‌فرض را در زمان اجرا تغییر بدهی (اختیاری) */
+    public static synchronized void setDefaultScore(int defaultScore) {
+        DEFAULT_SCORE = defaultScore;
+    }
+
+    public static synchronized int getDefaultScore() {
+        return DEFAULT_SCORE;
     }
 
     public static synchronized void resetToDefault() {
         score = DEFAULT_SCORE;
     }
 
+    // ===== عملیات پایه =====
     public static synchronized void add(int amount) {
         if (amount > 0) score += amount;
     }
@@ -35,6 +52,7 @@ public final class ScoreManager {
         if (amount > 0) score -= amount;
     }
 
+    // ===== جریمه/پاداش بر اساس زمان اولیه =====
     /** جریمه مرگ بر اساس زمان اولیه (ثانیه/تیک) */
     public static synchronized void applyDeathPenaltyByInitialTime(int initialSeconds) {
         if (initialSeconds < 0) initialSeconds = 0;
@@ -63,7 +81,7 @@ public final class ScoreManager {
         score += (2 * initial);
     }
 
-    /** (اختیاری) پاداش نجات */
+    // ===== پاداش بر اساس شدت (اختیاری) =====
     public static synchronized void addRescueRewardBySeverity(InjurySeverity severity) {
         int reward = 0;
         if (severity == InjurySeverity.LOW) reward = 100;
@@ -73,8 +91,10 @@ public final class ScoreManager {
     }
 
     // ===== سازگاری با کد قدیمی (نمونه‌ای) =====
-    // اگر در بخشی از کدت متدهای نمونه‌ای را صدا می‌زنی، همچنان کار خواهند کرد.
     public synchronized int getScoreInstance() { return getScore(); }
+    public synchronized void setScoreInstance(int s) { setScore(s); }                   // ✅ اضافه شد
+    public synchronized void setDefaultScoreInstance(int d) { setDefaultScore(d); }     // ✅ اضافه شد
+    public synchronized int  getDefaultScoreInstance() { return getDefaultScore(); }     // ✅ اضافه شد
     public synchronized void resetToDefaultInstance() { resetToDefault(); }
     public synchronized void addInstance(int amount) { add(amount); }
     public synchronized void deductInstance(int amount) { deduct(amount); }

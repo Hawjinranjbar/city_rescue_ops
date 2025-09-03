@@ -22,7 +22,7 @@ public class Injured {
     private static final int TIME_CRITICAL_DEFAULT = 60;
 
     private final int id;                  // شناسه یکتا
-    private final Position position;       // مختصات روی نقشه (مرجع نهایی؛ برای Load معمولاً با نمونه جدید جایگزین می‌شود)
+    private final Position position;       // مختصات روی نقشه
     private final InjurySeverity severity; // شدت جراحت (LOW/MEDIUM/CRITICAL)
     private final Timer rescueTimer;       // تایمر فرصت نجات
     private final int initialTimeLimit;    // زمان اولیهٔ تایمر (برای HUD/جریمه)
@@ -36,15 +36,15 @@ public class Injured {
     // --- سازنده با زمان مشخص ---
     public Injured(int id, Position position, InjurySeverity severity, int timeLimit) {
         this.id = id;
-        this.position = position;
-        this.severity = severity;
-        this.initialTimeLimit = timeLimit > 0 ? timeLimit : defaultTimeFor(severity);
+        this.position = position != null ? position : new Position(0, 0);
+        this.severity = severity != null ? severity : InjurySeverity.LOW;
+        this.initialTimeLimit = timeLimit > 0 ? timeLimit : defaultTimeFor(this.severity);
         this.rescueTimer = new Timer(this.initialTimeLimit);
         this.isRescued = false;
         this.isDead = false;
         this.beingRescued = false;
         this.visible = true;
-        this.critical = (severity == InjurySeverity.CRITICAL); // پیش‌فرض: اگر شدت CRITICAL باشد، critical=true
+        this.critical = (this.severity == InjurySeverity.CRITICAL); // پیش‌فرض: اگر شدت CRITICAL باشد، critical=true
     }
 
     // --- سازنده با زمان پیش‌فرض بر اساس شدت ---
@@ -85,8 +85,11 @@ public class Injured {
     public InjurySeverity getSeverity() { return severity; }
     public Timer getRescueTimer() { return rescueTimer; }
 
-    /** باقیماندهٔ زمان (ثانیه/تیک) */
+    /** باقیماندهٔ زمان (واحد تیک/ثانیه) */
     public int getRemainingTime() { return rescueTimer.getRemainingTime(); }
+
+    /** برای سازگاری با کدهایی که میلی‌ثانیه می‌خوانند (long) */
+    public long getRemainingMillis() { return (long) rescueTimer.getRemainingTime(); }
 
     /** زمان اولیهٔ تایمر (برای HUD و محاسبهٔ جریمه) */
     public int getInitialTimeLimit() { return initialTimeLimit; }
@@ -103,6 +106,10 @@ public class Injured {
 
     public boolean isRescued() { return isRescued; }
     public boolean isDead() { return isDead; }
+
+    /** برای سازگاری با GameState: زنده‌بودن = not dead */
+    public boolean isAlive() { return !isDead; }
+
     public boolean isBeingRescued() { return beingRescued; }
     public void setBeingRescued(boolean beingRescued) { this.beingRescued = beingRescued; }
     public boolean isVisible() { return visible; }
@@ -143,6 +150,11 @@ public class Injured {
         this.critical = true;
     }
 
+    /** اگر لازم شد بیرونی‌ها بتوانند critical را خاموش/روشن کنند (برای Load) */
+    public void setCritical(boolean critical) {
+        this.critical = critical;
+    }
+
     // ===================== محاسبات امتیاز =====================
     /**
      * جریمهٔ مرگ بر مبنای قانون پروژه:
@@ -179,6 +191,7 @@ public class Injured {
      * مقدار منفی به ۰ بریده می‌شود.
      */
     public void setRemainingTime(int remaining) {
+        if (remaining < 0) remaining = 0;
         try { rescueTimer.setRemainingTime(remaining); } catch (Throwable ignored) { }
     }
 }
