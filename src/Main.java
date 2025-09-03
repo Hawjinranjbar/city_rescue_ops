@@ -87,7 +87,7 @@ public class Main {
 
                     // امتیاز اولیه + HUD با MiniMap
                     ScoreManager.resetToDefault();
-                    final int[] timeLeft = new int[]{300}; // ۵ دقیقه شروع
+                    final int[] timeLeft = new int[]{180}; // ۳ دقیقه شروع
                     final HUDPanel hud = new HUDPanel(cityMap, rescuers, victims);
                     hud.updateHUD(ScoreManager.getScore(), rescuedCount, deadCount, timeLeft[0],
                             cityMap, rescuers, victims);

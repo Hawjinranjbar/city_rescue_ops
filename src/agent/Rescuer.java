@@ -118,8 +118,9 @@ public class Rescuer {
             }
         }
 
+        boolean hadLeftRow = rescuerFrames[DIR_LEFT] != null && rescuerFrames[DIR_LEFT][0] != null;
         // اگر ردیف LEFT موجود نبود، از RIGHT وارونه بساز
-        if ((rescuerFrames[DIR_LEFT] == null || rescuerFrames[DIR_LEFT][0] == null) && rescuerFrames[DIR_RIGHT] != null) {
+        if (!hadLeftRow && rescuerFrames[DIR_RIGHT] != null && rescuerFrames[DIR_RIGHT][0] != null) {
             BufferedImage[] leftRow = new BufferedImage[RESCUER_COLS];
             for (int c = 0; c < RESCUER_COLS; c++) {
                 if (rescuerFrames[DIR_RIGHT][c] != null) {
@@ -127,6 +128,14 @@ public class Rescuer {
                 }
             }
             rescuerFrames[DIR_LEFT] = leftRow;
+        }
+
+        // در برخی شیت‌ها ترتیب ردیف‌ها برعکس است (DOWN,RIGHT,LEFT)
+        final boolean SWAP_LR = true;
+        if (SWAP_LR && hadLeftRow && rescuerFrames[DIR_RIGHT] != null) {
+            BufferedImage[] tmp = rescuerFrames[DIR_LEFT];
+            rescuerFrames[DIR_LEFT] = rescuerFrames[DIR_RIGHT];
+            rescuerFrames[DIR_RIGHT] = tmp;
         }
 
         // اگر ردیف UP نبود، از DOWN کپی کن
