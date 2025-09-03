@@ -114,6 +114,11 @@ public class HUDPanel extends JPanel {
         System.out.println("[HUDPanel] GameEngine injected: " + (engine != null));
     }
 
+    /** دسترسی به MiniMap داخلی برای تزریق به GameEngine */
+    public MiniMapPanel getMiniMapPanel() {
+        return miniMapPanel;
+    }
+
     // ------------------- API آپدیت -------------------
     public void updateHUD(int score, int rescued, int dead) {
         this.score = score;
