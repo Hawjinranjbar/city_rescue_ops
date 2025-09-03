@@ -45,6 +45,7 @@ public class HUDPanel extends JPanel {
     private final JButton btnSave;
     private final JButton btnLoad;
     private final JButton btnRestart;
+    private final JButton btnAddAI;
 
     // ------------------- سازنده‌ها -------------------
     public HUDPanel() {
@@ -73,6 +74,7 @@ public class HUDPanel extends JPanel {
         btnSave    = createIconButton("assets/ui/save.png",    "Quick Save", "Save");
         btnLoad    = createIconButton("assets/ui/load.png",    "Quick Load", "Load");
         btnRestart = createIconButton("assets/ui/restart.png", "Restart",    "Restart");
+        btnAddAI   = createIconButton("assets/ui/escape.png",  "Add AI",     "AI");
         wireNonPauseButtons();
         addButtonsToBar();
     }
@@ -104,6 +106,7 @@ public class HUDPanel extends JPanel {
         btnSave    = createIconButton("assets/ui/save.png",    "Quick Save", "Save");
         btnLoad    = createIconButton("assets/ui/load.png",    "Quick Load", "Load");
         btnRestart = createIconButton("assets/ui/restart.png", "Restart",    "Restart");
+        btnAddAI   = createIconButton("assets/ui/escape.png",  "Add AI",     "AI");
         wireNonPauseButtons();
         addButtonsToBar();
     }
@@ -179,6 +182,7 @@ public class HUDPanel extends JPanel {
         controlBar.add(btnSave);
         controlBar.add(btnLoad);
         controlBar.add(btnRestart);
+        controlBar.add(btnAddAI);
         controlBar.revalidate();
         controlBar.repaint();
     }
@@ -230,6 +234,13 @@ public class HUDPanel extends JPanel {
                 if (gameEngine == null) { System.out.println("[HUDPanel] Restart clicked BUT gameEngine==null"); return; }
                 System.out.println("[HUDPanel] Restart → restartGame()");
                 try { gameEngine.restartGame(); } catch (Throwable t) { t.printStackTrace(); }
+            }
+        });
+        btnAddAI.addActionListener(new ActionListener() {
+            @Override public void actionPerformed(ActionEvent e) {
+                if (gameEngine == null) { System.out.println("[HUDPanel] AddAI clicked BUT gameEngine==null"); return; }
+                System.out.println("[HUDPanel] AddAI → spawnAIRescuer()");
+                try { gameEngine.spawnAIRescuer(); } catch (Throwable t) { t.printStackTrace(); }
             }
         });
     }

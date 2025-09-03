@@ -97,7 +97,7 @@ public class AgentController {
         // --- حالت عادی: به سمت مجروح قابل نجات برو ---
         if (candidates == null || candidates.isEmpty()) return;
 
-        Injured target = chooseNearestRescuable(rescuer.getPosition(), candidates);
+        Injured target = chooseLeastTime(rescuer.getPosition(), candidates);
         if (target == null) return;
 
         // اگر مجاور است → Pickup و ورود به آمبولانس
@@ -155,17 +155,20 @@ public class AgentController {
 
     /* === انتخاب هدف‌ها === */
 
-    private Injured chooseNearestRescuable(Position from, List<Injured> list) {
+    private Injured chooseLeastTime(Position from, List<Injured> list) {
         if (list == null || list.isEmpty()) return null;
         Injured best = null;
-        int bestD = Integer.MAX_VALUE;
+        int bestTime = Integer.MAX_VALUE;
+        int bestDist = Integer.MAX_VALUE;
         for (int i = 0; i < list.size(); i++) {
             Injured inj = list.get(i);
             if (inj == null) continue;
             if (inj.isDead() || inj.isRescued() || inj.getPosition() == null) continue;
+            int rem = inj.getRemainingTime();
             int d = manhattan(from, inj.getPosition());
-            if (d < bestD) {
-                bestD = d;
+            if (rem < bestTime || (rem == bestTime && d < bestDist)) {
+                bestTime = rem;
+                bestDist = d;
                 best = inj;
             }
         }
