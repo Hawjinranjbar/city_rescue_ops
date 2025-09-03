@@ -13,6 +13,8 @@ import java.util.HashMap;
  * - پشتیبانی از CollisionMap پیش‌فرض و پروفایل‌ها
  * - پشتیبانی از لایه‌های دودویی از TMX (RoadMask, HospitalMask)
  * - ابزارهای کمکی حرکت/بررسی
+ * - پیدا کردن نزدیک‌ترین بیمارستان (از لیست ثبت‌شده یا HospitalMask)
+ * بدون استفاده از لامبدا.
  */
 public class CityMap {
 
@@ -32,8 +34,13 @@ public class CityMap {
     // --- لایه‌های دودویی (از TMX) مثل RoadMask / HospitalMask ---
     private final Map<String, boolean[][]> binaryLayers = new HashMap<String, boolean[][]>();
 
+    // --- بیمارستان‌ها (اختیاری: اگر ثبت شوند، جست‌وجو اولویتاً از روی این لیست انجام می‌شود) ---
+    private final List<Hospital> hospitals = new ArrayList<Hospital>();
+
     // --- سازنده‌ها ---
-    public CityMap(int width, int height) { this(width, height, 32, 32); }
+    public CityMap(int width, int height) {
+        this(width, height, 32, 32);
+    }
 
     public CityMap(int width, int height, int tileWidth, int tileHeight) {
         this.width = width;
@@ -92,6 +99,11 @@ public class CityMap {
         return x >= 0 && x < width && y >= 0 && y < height;
     }
 
+    /** معادلِ خواناتر برای کدهای بالادستی (Rescuer/AI) */
+    public boolean isInside(int x, int y) {
+        return isValid(x, y);
+    }
+
     // --- عبورپذیری (پروفایل پیش‌فرض) ---
     public boolean isWalkable(int x, int y) {
         if (!isValid(x, y)) return false;
@@ -102,6 +114,11 @@ public class CityMap {
             return collisionMap.isWalkable(x, y);
         }
         return c != null && c.isWalkable();
+    }
+
+    /** برای حالت عادیِ Rescuer وقتی ambulanceMode=false */
+    public boolean isBlocked(int x, int y) {
+        return !isWalkable(x, y);
     }
 
     public boolean isWalkable(int x, int y, CollisionMap cm) {
@@ -129,7 +146,7 @@ public class CityMap {
 
         int x = pos.getX();
         int y = pos.getY();
-        int[][] deltas = { {0, 1}, {1, 0}, {0, -1}, {-1, 0} };
+        int[][] deltas = new int[][] { {0, 1}, {1, 0}, {0, -1}, {-1, 0} };
 
         for (int i = 0; i < deltas.length; i++) {
             int nx = x + deltas[i][0];
@@ -151,7 +168,7 @@ public class CityMap {
 
         int x = pos.getX();
         int y = pos.getY();
-        int[][] deltas = { {0, 1}, {1, 0}, {0, -1}, {-1, 0} };
+        int[][] deltas = new int[][] { {0, 1}, {1, 0}, {0, -1}, {-1, 0} };
 
         for (int i = 0; i < deltas.length; i++) {
             int nx = x + deltas[i][0];
@@ -178,6 +195,7 @@ public class CityMap {
         if (cm == null) collisionProfiles.remove(name);
         else collisionProfiles.put(name, cm);
     }
+
     public CollisionMap getCollisionProfile(String name) {
         return collisionProfiles.get(name);
     }
@@ -185,12 +203,15 @@ public class CityMap {
     // --- لایه‌های دودویی TMX ---
     public void setBinaryLayer(String name, boolean[][] grid) {
         if (name == null) return;
-        if (grid == null) { binaryLayers.remove(name); return; }
+        if (grid == null) {
+            binaryLayers.remove(name);
+            return;
+        }
         binaryLayers.put(name, grid);
     }
 
     /** فقط برای دسترسی عمومی (مثلاً در لودر). */
-    public Object getBinaryLayer(String name) {
+    public boolean[][] getBinaryLayer(String name) {
         return binaryLayers.get(name);
     }
 
@@ -223,9 +244,91 @@ public class CityMap {
         boolean[][] b = new boolean[a.length][];
         for (int y = 0; y < a.length; y++) {
             b[y] = new boolean[a[y].length];
-            for (int x = 0; x < a[y].length; x++) b[y][x] = (a[y][x] != 0);
+            for (int x = 0; x < a[y].length; x++) {
+                b[y][x] = (a[y][x] != 0);
+            }
         }
         return b;
+    }
+
+    // --- بیمارستان‌ها: ثبت/دریافت ---
+    public void registerHospital(Hospital h) {
+        if (h == null) return;
+        hospitals.add(h);
+    }
+
+    public List<Hospital> getHospitals() {
+        return hospitals;
+    }
+
+    // --- نزدیک‌ترین بیمارستان (شیء)؛ اگر Hospital(Position) موجود نباشد، reflection تلاش می‌کند ---
+    public Hospital findNearestHospital(Position from) {
+        if (from == null) return null;
+
+        // 1) اگر لیست بیمارستان ثبت شده بود، همان را مرجع بگیر
+        if (!hospitals.isEmpty()) {
+            Hospital bestH = null;
+            int bestD = Integer.MAX_VALUE;
+            for (int i = 0; i < hospitals.size(); i++) {
+                Hospital h = hospitals.get(i);
+                if (h == null) continue;
+                Position hp = h.getTilePosition();
+                if (hp == null) continue;
+                int d = manhattan(from, hp);
+                if (d < bestD) {
+                    bestD = d;
+                    bestH = h;
+                }
+            }
+            if (bestH != null) return bestH;
+        }
+
+        // 2) در غیر اینصورت از HospitalMask نزدیک‌ترین تایل بیمارستان را پیدا کن
+        Position hp = findNearestHospitalTile(from);
+        if (hp == null) return null;
+
+        // 3) تلاش برای ساخت Hospital با Position (اگر سازنده موجود باشد)
+        try {
+            Class<?> cls = Class.forName("map.Hospital");
+            java.lang.reflect.Constructor<?> ctor = cls.getConstructor(Position.class);
+            Object obj = ctor.newInstance(hp);
+            return (Hospital) obj;
+        } catch (Throwable ignore) {
+            // اگر سازنده موجود نبود، null برگردان؛ کالر می‌تواند از findNearestHospitalTile استفاده کند
+            return null;
+        }
+    }
+
+    /**
+     * نزدیک‌ترین تایل بیمارستان به نقطه‌ی from (بر اساس HospitalMask).
+     * اگر HospitalMask وجود نداشته باشد یا خالی باشد → null.
+     */
+    public Position findNearestHospitalTile(Position from) {
+        if (from == null) return null;
+        boolean[][] hm = binaryLayers.get("HospitalMask");
+        if (hm == null) return null;
+
+        int bestD = Integer.MAX_VALUE;
+        Position best = null;
+
+        for (int y = 0; y < height; y++) {
+            boolean[] row = hm[y];
+            if (row == null) continue;
+            for (int x = 0; x < width; x++) {
+                if (!row[x]) continue;
+                Position p = new Position(x, y);
+                int d = manhattan(from, p);
+                if (d < bestD) {
+                    bestD = d;
+                    best = p;
+                }
+            }
+        }
+        return best;
+    }
+
+    private int manhattan(Position a, Position b) {
+        return Math.abs(a.getX() - b.getX()) + Math.abs(a.getY() - b.getY());
     }
 
     // --- مدیریت نقشه ---
@@ -235,6 +338,8 @@ public class CityMap {
                 grid[y][x] = null;
             }
         }
+        hospitals.clear();
+        // عمداً لایه‌های دودویی و خصوصیات را پاک نمی‌کنیم مگر اینکه خودت بخواهی
     }
 
     // --- Getter ها ---

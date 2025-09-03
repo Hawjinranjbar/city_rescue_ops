@@ -41,6 +41,9 @@ public class GameEngine {
     private final MiniMapPanel miniMapPanel;
     private final Logger logger;
 
+    // --- گارد برای جلوگیری از اسپاون چندبارهٔ AI ---
+    private boolean aiSpawned = false;
+
     private final javax.swing.Timer gameLoopTimer;
     /** وضعیت جاری (برای Save/Load) */
     private final GameState state;
@@ -121,6 +124,12 @@ public class GameEngine {
         List<Rescuer> rescuerList = state.getRescuers();
         if (map == null || rescuerList == null) return;
 
+        // گارد: یک‌بار بیشتر AI نساز
+        if (aiSpawned) {
+            try { logger.logWarn("spawnAIRescuer: already spawned; ignoring duplicate request."); } catch (Throwable ignored) {}
+            return;
+        }
+
         Position spawn = findSpawnTile(map, rescuerList);
         int newId = agentManager.size() + 1;
         Rescuer ai = new Rescuer(newId, spawn);
@@ -143,9 +152,18 @@ public class GameEngine {
                 (int) victimManager.countDead()
         );
 
-
         if (gamePanel != null) gamePanel.repaint();
         if (hudPanel != null) hudPanel.repaint();
+
+        // --- راه‌اندازی AI از طریق RescueCoordinator (بدون کلاس جدید و بدون reflection) ---
+        try {
+            rescueCoordinator.configureAIContext(victimManager, state.getHospitals());
+            rescueCoordinator.startAIFor(ai);
+            aiSpawned = true;
+            logger.logInfo("AI thread started for rescuer id=" + ai.getId());
+        } catch (Throwable t) {
+            logger.logError("GameEngine.spawnAIRescuer/startAI", t);
+        }
 
         start();
     }

@@ -2,6 +2,8 @@
 package agent;
 
 import controller.ScoreManager;
+import map.CityMap;
+import map.Hospital;
 import util.AssetLoader;
 import util.Position;
 import victim.Injured;
@@ -44,6 +46,9 @@ public class Rescuer {
 
     /** فریز سراسری برای Pause/Resume (حین Save/Load) */
     private boolean paused = false;
+
+    /** اندازه گام حرکت (تایل‌محور) برای کنترل درخواست حرکت */
+    private int moveStep = 1;
 
     // ====== گرافیک/انیمیشن – ریسکیور ======
     private BufferedImage[][] rescuerFrames;                // [dir][frame]
@@ -198,23 +203,23 @@ public class Rescuer {
     }
 
     // ====== API منطقی ======
-    public int getId() { return id; }
-    public Position getPosition() { return position; }
+    public synchronized int getId() { return id; }
+    public synchronized Position getPosition() { return position; }
 
     /** X/Y کاشی فعلی (برای ذخیره‌سازی سبک) */
-    public int getTileX() { return position != null ? position.getX() : 0; }
-    public int getTileY() { return position != null ? position.getY() : 0; }
+    public synchronized int getTileX() { return position != null ? position.getX() : 0; }
+    public synchronized int getTileY() { return position != null ? position.getY() : 0; }
 
-    public void setPosition(Position newPos) {
+    public synchronized void setPosition(Position newPos) {
         if (newPos != null) this.position = newPos;
     }
 
     /** تنظیم موقعیت به مختصات کاشی */
-    public void setTile(int x, int y) {
+    public synchronized void setTile(int x, int y) {
         setPositionXY(x, y);
     }
 
-    public void setPositionXY(int x, int y) {
+    public synchronized void setPositionXY(int x, int y) {
         if (this.position == null) this.position = new Position(x, y);
         else { this.position.setX(x); this.position.setY(y); }
     }
@@ -223,7 +228,7 @@ public class Rescuer {
      * تعیین جهت از روی دلتا حرکت برای اطمینان از رندر صحیح سمت چپ.
      * اگر حرکتی نبود، جهت ورودی حفظ می‌شود تا ایستاده‌بودن هم درست نمایش داده شود.
      */
-    public void onMoveStep(int newX, int newY, int dir) {
+    public synchronized void onMoveStep(int newX, int newY, int dir) {
         if (paused) return; // در حالت فریز حرکت/انیمیشن نکن
         int oldX = (this.position != null) ? this.position.getX() : newX;
         int oldY = (this.position != null) ? this.position.getY() : newY;
@@ -247,36 +252,35 @@ public class Rescuer {
         nextFrame();
     }
 
-    public boolean isBusy() { return isBusy; }
-    public void setBusy(boolean busy) { this.isBusy = busy; }
+    public synchronized boolean isBusy() { return isBusy; }
+    public synchronized void setBusy(boolean busy) { this.isBusy = busy; }
 
-    public boolean isCarryingVictim() { return carryingVictim != null; }
-    public Injured getCarryingVictim() { return carryingVictim; }
+    public synchronized boolean isCarryingVictim() { return carryingVictim != null; }
+    public synchronized Injured getCarryingVictim() { return carryingVictim; }
 
-    public boolean isAmbulanceMode() { return ambulanceMode; }
+    public synchronized boolean isAmbulanceMode() { return ambulanceMode; }
     /** تنظیم مستقیم حالت آمبولانس (برای Load). */
-    public void setAmbulanceMode(boolean enabled) {
+    public synchronized void setAmbulanceMode(boolean enabled) {
         if (this.ambulanceMode == enabled) return;
         this.ambulanceMode = enabled;
-        if (!enabled) {
-            // خروج از حالت: وضعیت‌ها ریست می‌شن ولی قربانی رها نمی‌شود مگر detach صدا زده شود
-            resetAnim();
-        } else {
-            // ورود به حالت: انیمیشن صفر
-            resetAnim();
-        }
+        resetAnim();
     }
 
     /** فلگ no-clip فقط برای حرکتِ خود Rescuer (نه Vehicle). */
-    public boolean isNoClip() { return noClip; }
-    public void setNoClip(boolean noClip) { this.noClip = noClip; }
+    public synchronized boolean isNoClip() { return noClip; }
+    public synchronized void setNoClip(boolean noClip) { this.noClip = noClip; }
 
     /** وضعیت کنترل هوش مصنوعی */
-    public boolean isAIControlled() { return aiControlled; }
-    public void setAIControlled(boolean aiControlled) { this.aiControlled = aiControlled; }
+    public synchronized boolean isAIControlled() { return aiControlled; }
+    public synchronized void setAIControlled(boolean aiControlled) { this.aiControlled = aiControlled; }
+
+    public synchronized void setMoveStep(int step) {
+        if (step <= 0) step = 1;
+        this.moveStep = step;
+    }
 
     // ====== عملیات حمل/تحویل ======
-    public void enterAmbulanceModeWith(Injured victim) {
+    public synchronized void enterAmbulanceModeWith(Injured victim) {
         if (victim == null || ambulanceMode) return;
         this.carryingVictim = victim;
         this.isBusy = true;
@@ -286,27 +290,24 @@ public class Rescuer {
     }
 
     /** معادل attachVictim برای سازگاری با Apply از روی DTO */
-    public void attachVictim(Injured victim) {
+    public synchronized void attachVictim(Injured victim) {
         if (victim == null) return;
         this.carryingVictim = victim;
         this.isBusy = true;
         try { victim.setBeingRescued(true); } catch (Throwable ignored) {}
-        // حالت آمبولانس را به caller وا می‌گذاریم؛ اگر لازم است:
-        // this.ambulanceMode = true;
         resetAnim();
     }
 
-    public void detachVictimIfAny() {
+    public synchronized void detachVictimIfAny() {
         if (this.carryingVictim != null) {
             try { this.carryingVictim.setBeingRescued(false); } catch (Throwable ignored) {}
         }
         this.carryingVictim = null;
         this.isBusy = false;
-        // خروج از آمبولانس به عهده‌ی caller است؛ اینجا تغییر نمی‌دهیم
         resetAnim();
     }
 
-    public void deliverVictimAtHospital() {
+    public synchronized void deliverVictimAtHospital() {
         if (carryingVictim == null) return;
         carryingVictim.markAsRescued();
         int initial = safeInitialTime(carryingVictim);
@@ -318,7 +319,7 @@ public class Rescuer {
         resetAnim();
     }
 
-    public void cancelAmbulanceMode() {
+    public synchronized void cancelAmbulanceMode() {
         if (!ambulanceMode) return;
         if (carryingVictim != null) {
             try { carryingVictim.setBeingRescued(false); } catch (Throwable ignored) {}
@@ -329,14 +330,113 @@ public class Rescuer {
         resetAnim();
     }
 
+    /**
+     * اگر کنار بیمارستان بودیم تحویل می‌دهد (فاصله ≤ 1).
+     */
+    public synchronized void deliverVictimAtHospitalIfClose(Hospital h) {
+        if (h == null) return;
+        if (!isBusy || carryingVictim == null) return;
+
+        Position hp = h.getTilePosition();
+        if (hp == null) return;
+
+        int d = Math.abs(position.getX() - hp.getX()) + Math.abs(position.getY() - hp.getY());
+        if (d <= 1) {
+            deliverVictimAtHospital();
+        }
+    }
+
+    /**
+     * اگر فاصله تا مجروح ≤ 1 بود، او را سوار می‌کند و به حالت آمبولانس می‌رود.
+     */
+    public synchronized void pickupVictimIfClose(Injured v) {
+        if (v == null) return;
+        if (!v.isAlive()) return;
+        if (v.isBeingRescued()) return;
+
+        Position vp = v.getPosition();
+        if (vp == null) return;
+
+        int d = Math.abs(position.getX() - vp.getX()) + Math.abs(position.getY() - vp.getY());
+        if (d <= 1) {
+            this.carryingVictim = v;
+            this.isBusy = true;
+            this.ambulanceMode = true;
+            try { v.setBeingRescued(true); } catch (Throwable ignored) {}
+            v.setPosition(this.position);
+            resetAnim();
+        }
+    }
+
+    // ====== حرکت/برخورد ======
+
+    /**
+     * درخواست حرکت به مختصات مقصد (تایل‌محور).
+     * - اگر pause باشد، حرکتی انجام نمی‌شود.
+     * - اگر خارج از نقشه باشد، رد می‌شود.
+     * - اگر ambulanceMode=true → فقط روی جاده‌ها (map.isRoad).
+     * - اگر ambulanceMode=false → از برخورد عمومی تبعیت (map.isBlocked).
+     * - اگر noClip=true → برخورد نادیده گرفته می‌شود (فقط گارد محدوده چک می‌شود).
+     * - فقط گام‌های یک‌تایی در چهار جهت مجاز است (|dx|+|dy| == moveStep).
+     */
+    public synchronized boolean requestMove(Position next, CityMap map) {
+        if (paused) return false;
+        if (next == null || map == null) return false;
+        if (position == null) position = new Position(0, 0);
+
+        // گارد محدوده
+        if (!map.isInside(next.getX(), next.getY())) return false;
+
+        // گارد گام
+        int dx = next.getX() - position.getX();
+        int dy = next.getY() - position.getY();
+        if (Math.abs(dx) + Math.abs(dy) != moveStep) {
+            return false; // از پرش‌های چندتایی جلوگیری می‌کنیم
+        }
+
+        // اگر noClip روشن است، فقط محدوده را چک کردیم و عبور آزاد است
+        if (!noClip) {
+            if (ambulanceMode) {
+                // حالت آمبولانس: فقط جاده‌ها
+                if (!map.isRoad(next.getX(), next.getY())) return false;
+            } else {
+                // حالت عادی: برخورد عمومی
+                if (map.isBlocked(next.getX(), next.getY())) return false;
+            }
+        }
+
+        // حرکت
+        this.position = next;
+
+        // آپدیت جهت برای رندر
+        if (dx < 0)      this.direction = DIR_LEFT;
+        else if (dx > 0) this.direction = DIR_RIGHT;
+        else if (dy < 0) this.direction = DIR_UP;
+        else if (dy > 0) this.direction = DIR_DOWN;
+
+        // همگام‌سازی موقعیت مجروحِ همراه
+        if (isBusy && carryingVictim != null) {
+            carryingVictim.setPosition(this.position);
+        }
+
+        // انیمیشن فقط برای حالت پیاده
+        if (!ambulanceMode) {
+            nextFrame();
+        }
+        return true;
+    }
+
+    /** محدودسازی حرکت روی جاده در حالت آمبولانس (این همان منطقِ Vehicle است و تغییری نکرده) */
+    public synchronized boolean isRoadOnlyMode() { return ambulanceMode; }
+
     // ====== گرافیک/انیمیشن ======
-    public void setDirection(int dir) {
+    public synchronized void setDirection(int dir) {
         this.direction = clamp(dir, 0, 3);
     }
-    public void faceTo(int dir) { setDirection(dir); }
-    public int getDirection() { return direction; }
+    public synchronized void faceTo(int dir) { setDirection(dir); }
+    public synchronized int getDirection() { return direction; }
 
-    public BufferedImage getSprite() {
+    public synchronized BufferedImage getSprite() {
         if (ambulanceMode) {
             if (ambulanceFrames == null) return null;
             int dir = clamp(direction, 0, 3);
@@ -350,7 +450,7 @@ public class Rescuer {
         }
     }
 
-    public BufferedImage getSpriteScaled(int tileSize) {
+    public synchronized BufferedImage getSpriteScaled(int tileSize) {
         if (tileSize <= 0) return getSprite();
 
         if (ambulanceMode) {
@@ -402,7 +502,7 @@ public class Rescuer {
         return grid[r][c];
     }
 
-    public void nextFrame() {
+    public synchronized void nextFrame() {
         if (paused) return;
         if (ambulanceMode) return; // آمبولانس فریم راه‌رفتن ندارد
         if (rescuerFrames == null) return;
@@ -411,10 +511,7 @@ public class Rescuer {
         if (colCount > 0) currentFrame = (currentFrame + 1) % colCount;
     }
 
-    public void resetAnim() { currentFrame = 0; }
-
-    /** محدودسازی حرکت روی جاده در حالت آمبولانس (این همان منطقِ Vehicle است و تغییری نکرده) */
-    public boolean isRoadOnlyMode() { return ambulanceMode; }
+    public synchronized void resetAnim() { currentFrame = 0; }
 
     private int safeInitialTime(Injured v) {
         if (v == null) return 0;
@@ -435,12 +532,12 @@ public class Rescuer {
     // ====== سازگاری با Thread-base: Pause/Resume ======
 
     /** فریز منطق حرکت/انیمیشن این نجات‌دهنده (حین Save/Load) */
-    public void pause() {
+    public synchronized void pause() {
         this.paused = true;
     }
 
     /** ادامهٔ منطق پس از فریز */
-    public void resume() {
+    public synchronized void resume() {
         this.paused = false;
     }
 }

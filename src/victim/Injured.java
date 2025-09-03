@@ -22,7 +22,7 @@ public class Injured {
     private static final int TIME_CRITICAL_DEFAULT = 60;
 
     private final int id;                  // شناسه یکتا
-    private final Position position;       // مختصات روی نقشه
+    private final Position position;       // مختصات روی نقشه (دارای setX/setY)
     private final InjurySeverity severity; // شدت جراحت (LOW/MEDIUM/CRITICAL)
     private final Timer rescueTimer;       // تایمر فرصت نجات
     private final int initialTimeLimit;    // زمان اولیهٔ تایمر (برای HUD/جریمه)
@@ -36,15 +36,15 @@ public class Injured {
     // --- سازنده با زمان مشخص ---
     public Injured(int id, Position position, InjurySeverity severity, int timeLimit) {
         this.id = id;
-        this.position = position != null ? position : new Position(0, 0);
-        this.severity = severity != null ? severity : InjurySeverity.LOW;
-        this.initialTimeLimit = timeLimit > 0 ? timeLimit : defaultTimeFor(this.severity);
+        this.position = (position != null) ? position : new Position(0, 0);
+        this.severity = (severity != null) ? severity : InjurySeverity.LOW;
+        this.initialTimeLimit = (timeLimit > 0) ? timeLimit : defaultTimeFor(this.severity);
         this.rescueTimer = new Timer(this.initialTimeLimit);
         this.isRescued = false;
         this.isDead = false;
         this.beingRescued = false;
         this.visible = true;
-        this.critical = (this.severity == InjurySeverity.CRITICAL); // پیش‌فرض: اگر شدت CRITICAL باشد، critical=true
+        this.critical = (this.severity == InjurySeverity.CRITICAL); // پیش‌فرض
     }
 
     // --- سازنده با زمان پیش‌فرض بر اساس شدت ---
@@ -60,7 +60,7 @@ public class Injured {
 
     // ===================== تایمر/به‌روزرسانی =====================
     /** کاهش یک تیک از تایمر (برای رفرش HUD یا منطق گیم‌لوپ) */
-    public void tick() {
+    public synchronized void tick() {
         if (isRescued || isDead) return;
         rescueTimer.tick();
     }
@@ -69,7 +69,7 @@ public class Injured {
      * یک تیک کم می‌کند و اگر زمان تمام شده باشد، مجروح را "مرده" علامت می‌زند.
      * @return اگر همین حالا به مرگ رسید، true
      */
-    public boolean updateAndCheckDeath() {
+    public synchronized boolean updateAndCheckDeath() {
         if (isRescued || isDead) return false;
         rescueTimer.tick();
         if (rescueTimer.isFinished()) {
@@ -80,22 +80,25 @@ public class Injured {
     }
 
     // ===================== Getter ها =====================
-    public int getId() { return id; }
-    public Position getPosition() { return position; }
-    public InjurySeverity getSeverity() { return severity; }
-    public Timer getRescueTimer() { return rescueTimer; }
+    public synchronized int getId() { return id; }
+    public synchronized Position getPosition() { return position; }
+    public synchronized InjurySeverity getSeverity() { return severity; }
+    public synchronized Timer getRescueTimer() { return rescueTimer; }
 
     /** باقیماندهٔ زمان (واحد تیک/ثانیه) */
-    public int getRemainingTime() { return rescueTimer.getRemainingTime(); }
+    public synchronized int getRemainingTime() { return rescueTimer.getRemainingTime(); }
+
+    /** نامِ موردنیاز AI: باقیماندهٔ زمان به ثانیه */
+    public synchronized int getRemainingTimeSeconds() { return rescueTimer.getRemainingTime(); }
 
     /** برای سازگاری با کدهایی که میلی‌ثانیه می‌خوانند (long) */
-    public long getRemainingMillis() { return (long) rescueTimer.getRemainingTime(); }
+    public synchronized long getRemainingMillis() { return (long) rescueTimer.getRemainingTime(); }
 
     /** زمان اولیهٔ تایمر (برای HUD و محاسبهٔ جریمه) */
-    public int getInitialTimeLimit() { return initialTimeLimit; }
+    public synchronized int getInitialTimeLimit() { return initialTimeLimit; }
 
     /** درصد زمان باقی‌مانده نسبت به زمان اولیه (۰..۱) */
-    public float getTimePercent() {
+    public synchronized float getTimePercent() {
         int rem = rescueTimer.getRemainingTime();
         int total = initialTimeLimit;
         if (total <= 0) return 0f;
@@ -104,22 +107,33 @@ public class Injured {
         return (float) rem / (float) total;
     }
 
-    public boolean isRescued() { return isRescued; }
-    public boolean isDead() { return isDead; }
+    public synchronized boolean isRescued() { return isRescued; }
+    public synchronized boolean isDead() { return isDead; }
 
     /** برای سازگاری با GameState: زنده‌بودن = not dead */
-    public boolean isAlive() { return !isDead; }
+    public synchronized boolean isAlive() { return !isDead; }
 
-    public boolean isBeingRescued() { return beingRescued; }
-    public void setBeingRescued(boolean beingRescued) { this.beingRescued = beingRescued; }
-    public boolean isVisible() { return visible; }
+    public synchronized boolean isBeingRescued() { return beingRescued; }
+    public synchronized void setBeingRescued(boolean beingRescued) { this.beingRescued = beingRescued; }
+    public synchronized boolean isVisible() { return visible; }
 
     /** وضعیت بحرانی (مجزا از enum شدت جراحت) */
-    public boolean isCritical() { return critical; }
+    public synchronized boolean isCritical() { return critical; }
+
+    // ===================== موقعیت (برای همگام‌سازی با Rescuer) =====================
+    /**
+     * هم‌نام با استفادهٔ Rescuer: هنگام سوار شدن، قربانی در هر گام با Rescuer جابجا می‌شود.
+     * چون Position خودش setX/setY دارد، فقط مختصات را کپی می‌کنیم.
+     */
+    public synchronized void setPosition(Position p) {
+        if (p == null) return;
+        this.position.setX(p.getX());
+        this.position.setY(p.getY());
+    }
 
     // ===================== وضعیت‌ها =====================
     /** علامت‌گذاری به‌عنوان نجات‌یافته + ناپدید شدن از صحنه */
-    public void markAsRescued() {
+    public synchronized void markAsRescued() {
         if (isDead) return;
         isRescued = true;
         beingRescued = false;
@@ -128,7 +142,7 @@ public class Injured {
     }
 
     /** علامت‌گذاری به‌عنوان مرده + ناپدید شدن از صحنه */
-    public void markAsDead() {
+    public synchronized void markAsDead() {
         if (isRescued) return;
         isDead = true;
         beingRescued = false;
@@ -137,7 +151,7 @@ public class Injured {
     }
 
     /** بازگردانی به وضعیت زنده (برای Load از اسنپ‌شات که alive=true دارد) */
-    public void markAsAlive() {
+    public synchronized void markAsAlive() {
         isDead = false;
         isRescued = false;
         // beingRescued را دست نمی‌زنیم تا از بیرون تنظیم شود
@@ -146,12 +160,12 @@ public class Injured {
     }
 
     /** علامت‌گذاری به‌عنوان بحرانی (مجزا از enum) */
-    public void markAsCritical() {
+    public synchronized void markAsCritical() {
         this.critical = true;
     }
 
     /** اگر لازم شد بیرونی‌ها بتوانند critical را خاموش/روشن کنند (برای Load) */
-    public void setCritical(boolean critical) {
+    public synchronized void setCritical(boolean critical) {
         this.critical = critical;
     }
 
@@ -160,7 +174,7 @@ public class Injured {
      * جریمهٔ مرگ بر مبنای قانون پروژه:
      * penalty = 2 × initialTimeLimit
      */
-    public int getDeathPenalty() {
+    public synchronized int getDeathPenalty() {
         int base = initialTimeLimit;
         if (base < 0) base = 0;
         return 2 * base;
@@ -168,19 +182,19 @@ public class Injured {
 
     // ===================== منطق انتخاب =====================
     /** آیا این مجروح هنوز قابل نجات است؟ */
-    public boolean canBeRescued() {
+    public synchronized boolean canBeRescued() {
         return !isRescued && !isDead && !beingRescued && !rescueTimer.isFinished();
     }
 
     // ===================== هماهنگی با Save/Load/Restart =====================
 
     /** فریزِ تایمر (برای Save/Load) */
-    public void pause() {
+    public synchronized void pause() {
         try { rescueTimer.pause(); } catch (Throwable ignored) { }
     }
 
     /** ازسرگیری تایمر پس از Load/Restart */
-    public void resume() {
+    public synchronized void resume() {
         if (!isDead && !isRescued) {
             try { rescueTimer.resume(); } catch (Throwable ignored) { }
         }
@@ -190,7 +204,7 @@ public class Injured {
      * ست‌کردن مستقیم زمان باقی‌مانده (برای Load از اسنپ‌شات).
      * مقدار منفی به ۰ بریده می‌شود.
      */
-    public void setRemainingTime(int remaining) {
+    public synchronized void setRemainingTime(int remaining) {
         if (remaining < 0) remaining = 0;
         try { rescueTimer.setRemainingTime(remaining); } catch (Throwable ignored) { }
     }

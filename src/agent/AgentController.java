@@ -1,3 +1,4 @@
+// src/agent/AgentController.java
 package agent;
 
 import map.Cell;
@@ -8,6 +9,9 @@ import util.MoveGuard;
 import util.Position;
 import util.Logger;
 import victim.Injured;
+import victim.VictimManager;
+import strategy.IPathFinder;
+import strategy.IAgentDecision;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -21,18 +25,36 @@ import java.util.List;
  * - رسیدن کنار بیمارستان → deliverVictimAtHospital() (نجات + پاداش 2×t0)
  * - از MoveGuard برای اعمال حرکت و occupancy استفاده می‌شود.
  * - collisionMap می‌تواند null باشد.
+ *
+ * افزوده‌ها:
+ * - حلقهٔ AI داخلی Thread-base: انتخاب کم‌زمان‌ترین مجروحِ آزاد و حرکت + حمل + تحویل
+ * - تزریق VictimManager و فهرست بیمارستان‌ها (اختیاری)
+ * - کنترل Start/Stop AI و تنظیم تاخیرها
+ * - پشتیبانی از setPathFinder / setDecisionLogic برای سازگاری با RescueCoordinator
+ *   (اگر نخواهی از آنها استفاده کنی، مانعی نیست؛ فقط ذخیره می‌شوند)
  */
 public class AgentController {
 
     private final CityMap map;
     private final CollisionMap collisionMap; // می‌تواند null باشد
 
-    // ارجاعات اختیاری (برای سازگاری با سازندهٔ قدیمی)
-    private final Object pathFinderRef;   // نگهداری صرف
-    private final Object decisionRef;     // نگهداری صرف
+    // مراجع قابل‌تزریق (اختیاری)
+    private IPathFinder pathFinderRef;   // اگر بخواهی به جای BFS داخلی از A* استفاده کنی
+    private IAgentDecision decisionRef;  // اگر بخواهی منطق انتخاب قربانی را بیرونی کنی
 
     // Logger اختیاری
     private Logger logger;
+
+    // ====== وابستگی‌ها برای AI داخلی ======
+    private VictimManager victimManager;      // اختیاری: اگر null باشد باید candidates دستی داده شود
+    private List<Hospital> hospitalsRef;      // اختیاری: اگر null باشد سعی می‌کنیم از map.getHospitals() بخوانیم
+
+    private Thread aiThread;                  // نخِ داخلی
+    private volatile boolean aiRunning;       // فلگ اجرا
+    private Rescuer aiRescuer;                // ریسکیور تحت کنترل AI
+
+    private int aiIdleDelayMs = 140;          // مکث حلقه
+    private int aiStepDelayMs = 35;           // مکث بین قدم‌ها (در moveAlongPath)
 
     /* === سازنده‌ها === */
 
@@ -40,21 +62,174 @@ public class AgentController {
         this(map, cm, null, null);
     }
 
-    // سازگار با نسخه‌ی قدیمی (انواع هرچه باشد، این ctor match می‌شود)
-    public AgentController(CityMap map, CollisionMap cm, Object pathFinder, Object decisionLogic) {
+    public AgentController(CityMap map, CollisionMap cm, IPathFinder pathFinder, IAgentDecision decisionLogic) {
         this.map = map;
         this.collisionMap = cm;
         this.pathFinderRef = pathFinder;
         this.decisionRef = decisionLogic;
         this.logger = null;
+
+        this.victimManager = null;
+        this.hospitalsRef = null;
+        this.aiThread = null;
+        this.aiRunning = false;
+        this.aiRescuer = null;
     }
+
+    /* ==============================
+       تزریق وابستگی‌ها / سازگاری با RescueCoordinator
+       ============================== */
 
     /** تزریق لاگر (اختیاری) */
     public void setLogger(Logger logger) {
         this.logger = logger;
     }
 
-    /* === اکشن سطح بالا برای هماهنگ‌کننده === */
+    /** تزریق VictimManager برای حلقهٔ AI (اختیاری ولی توصیه می‌شود) */
+    public void setVictimManager(VictimManager vm) {
+        this.victimManager = vm;
+    }
+
+    /** تزریق فهرست بیمارستان‌ها (اختیاری) */
+    public void setHospitals(List<Hospital> hospitals) {
+        this.hospitalsRef = hospitals;
+    }
+
+    /** تنظیم تاخیرهای حلقه و گام (اختیاری) */
+    public void setAiDelays(int idleMs, int stepMs) {
+        if (idleMs < 10) idleMs = 10;
+        if (stepMs < 5)  stepMs  = 5;
+        this.aiIdleDelayMs = idleMs;
+        this.aiStepDelayMs = stepMs;
+    }
+
+    /** برای سازگاری با RescueCoordinator — ذخیره‌ی PathFinder (فعلاً الزام به استفاده نیست) */
+    public void setPathFinder(IPathFinder pf) {
+        this.pathFinderRef = pf;
+    }
+
+    /** برای سازگاری با RescueCoordinator — ذخیره‌ی DecisionLogic (فعلاً الزام به استفاده نیست) */
+    public void setDecisionLogic(IAgentDecision dl) {
+        this.decisionRef = dl;
+    }
+
+    /** آیا AI در حال اجراست؟ */
+    public boolean isAIRunning() {
+        return aiRunning;
+    }
+
+    /* ==============================
+       کنترل AI داخلی (Thread-base)
+       ============================== */
+
+    /**
+     * شروع AI داخلی برای یک Rescuer.
+     * یک Thread داخلی اجرا می‌شود (بدون لامبدا).
+     */
+    public synchronized void startAI(final Rescuer rescuer) {
+        if (rescuer == null) return;
+        if (aiRunning) return;
+
+        this.aiRescuer = rescuer;
+        this.aiRunning = true;
+
+        aiThread = new Thread() {
+            @Override
+            public void run() {
+                setName("AgentController-AI-Rescuer-" + rescuer.getId());
+                while (aiRunning) {
+                    try {
+                        // 1) اگر در حالت آمبولانس است: به سمت بیمارستان برو و تحویل بده
+                        if (rescuer.isAmbulanceMode()) {
+                            Hospital h = selectNearestHospital(rescuer.getPosition()); // ← میان‌بر جدید
+                            if (h != null) {
+                                Position goal = pickBestAdjacentRoadTile(h, rescuer.getPosition());
+                                if (goal != null) {
+                                    List<Position> path = bfs(rescuer.getPosition(), goal, true);
+                                    if (!path.isEmpty()) moveAlongPath(rescuer, path);
+                                }
+                                if (canDeliverFrom(rescuer.getPosition(), h)) {
+                                    Injured v = rescuer.getCarryingVictim();
+                                    if (v != null && logger != null) {
+                                        try {
+                                            int reward = 2 * Math.max(0, v.getInitialTimeLimit());
+                                            rescuer.deliverVictimAtHospital();
+                                            logger.logAmbulanceDeliver(rescuer.getId(), rescuer.getPosition(), v.getId(), reward, controller.ScoreManager.getScore());
+                                        } catch (Exception ex) {
+                                            logger.logError("AgentController.AI/DeliverLog", ex);
+                                        }
+                                    } else {
+                                        rescuer.deliverVictimAtHospital();
+                                    }
+                                }
+                            }
+                            Thread.sleep(aiIdleDelayMs);
+                            continue;
+                        }
+
+                        // 2) حالت عادی: هدف = کم‌زمان‌ترین قربانی آزاد
+                        List<Injured> candidates = gatherRescuableCandidates();
+                        if (candidates == null || candidates.isEmpty()) {
+                            Thread.sleep(aiIdleDelayMs);
+                            continue;
+                        }
+                        Injured target = chooseLeastTime(rescuer.getPosition(), candidates);
+                        if (target == null) {
+                            Thread.sleep(aiIdleDelayMs);
+                            continue;
+                        }
+
+                        // اگر مجاور بود → pickup و ورود به آمبولانس
+                        if (rescuer.getPosition() != null &&
+                                rescuer.getPosition().isAdjacent4(target.getPosition())) {
+                            rescuer.enterAmbulanceModeWith(target);
+                            if (logger != null) {
+                                try {
+                                    String sev = (target.getSeverity() != null) ? target.getSeverity().name() : "null";
+                                    logger.logAmbulancePickup(rescuer.getId(), rescuer.getPosition(), target.getId(), sev, target.getInitialTimeLimit());
+                                } catch (Exception ex) {
+                                    logger.logError("AgentController.AI/PickupLog", ex);
+                                }
+                            }
+                            Thread.sleep(aiIdleDelayMs);
+                            continue;
+                        }
+
+                        // در غیر این صورت، به یکی از همسایه‌های قابل عبورِ هدف حرکت کن
+                        Position adj = pickBestAdjacentWalkable(target.getPosition(), rescuer.getPosition());
+                        if (adj != null) {
+                            List<Position> path = bfs(rescuer.getPosition(), adj, false);
+                            if (!path.isEmpty()) moveAlongPath(rescuer, path);
+                        }
+
+                        Thread.sleep(aiIdleDelayMs);
+                    } catch (InterruptedException ie) {
+                        // ممکن است stopAI شده باشد
+                    } catch (Exception ex) {
+                        if (logger != null) logger.logError("AgentController.AI/Loop", ex);
+                        try { Thread.sleep(200); } catch (InterruptedException ignored) {}
+                    }
+                }
+            }
+        };
+        aiThread.setDaemon(true);
+        aiThread.start();
+    }
+
+    /** توقف AI داخلی و آزادسازی نخ */
+    public synchronized void stopAI() {
+        aiRunning = false;
+        if (aiThread != null) {
+            try { aiThread.interrupt(); } catch (Throwable ignored) {}
+            aiThread = null;
+        }
+        aiRescuer = null;
+    }
+
+    /* ==============================
+       اکشن سطح بالا (برای فراخوانی RescueCoordinator)
+       ============================== */
+
     public void performAction(Rescuer rescuer,
                               List<Injured> candidates,
                               List<Hospital> hospitals) {
@@ -69,19 +244,14 @@ public class AgentController {
             Position goal = pickBestAdjacentRoadTile(h, rescuer.getPosition());
             if (goal == null) return;
 
-            // مسیر: فقط ROAD
-            List<Position> path = bfs(rescuer.getPosition(), goal, true);
-            if (!path.isEmpty()) {
-                moveAlongPath(rescuer, path);
-            }
+            List<Position> path = bfs(rescuer.getPosition(), goal, true); // فقط ROAD
+            if (!path.isEmpty()) moveAlongPath(rescuer, path);
 
-            // اگر کنار بیمارستان هست و روی ROAD ایستاده، تحویل بده
             if (canDeliverFrom(rescuer.getPosition(), h)) {
                 Injured v = rescuer.getCarryingVictim();
                 if (v != null && logger != null) {
                     try {
                         int reward = 2 * Math.max(0, v.getInitialTimeLimit());
-                        // خود deliverVictimAtHospital امتیاز را اضافه می‌کند
                         rescuer.deliverVictimAtHospital();
                         logger.logAmbulanceDeliver(rescuer.getId(), rescuer.getPosition(), v.getId(), reward, controller.ScoreManager.getScore());
                     } catch (Exception ex) {
@@ -100,7 +270,6 @@ public class AgentController {
         Injured target = chooseLeastTime(rescuer.getPosition(), candidates);
         if (target == null) return;
 
-        // اگر مجاور است → Pickup و ورود به آمبولانس
         if (rescuer.getPosition() != null && rescuer.getPosition().isAdjacent4(target.getPosition())) {
             rescuer.enterAmbulanceModeWith(target);
             if (logger != null) {
@@ -114,18 +283,16 @@ public class AgentController {
             return;
         }
 
-        // در غیر این صورت، به یکی از همسایه‌های عبوریِ مجروح حرکت کن (خود خانهٔ مجروح معمولاً آوار است)
         Position adj = pickBestAdjacentWalkable(target.getPosition(), rescuer.getPosition());
         if (adj == null) return;
 
-        // مسیر: walkable عادی (SIDEWALK/ROAD و ...)
-        List<Position> path = bfs(rescuer.getPosition(), adj, false);
-        if (!path.isEmpty()) {
-            moveAlongPath(rescuer, path);
-        }
+        List<Position> path = bfs(rescuer.getPosition(), adj, false); // walkable عادی
+        if (!path.isEmpty()) moveAlongPath(rescuer, path);
     }
 
-    /* === حرکت روی مسیر (گام‌به‌گام با MoveGuard) === */
+    /* ==============================
+       حرکت روی مسیر (گام‌به‌گام با MoveGuard)
+       ============================== */
     public boolean moveAlongPath(Rescuer rescuer, List<Position> path) {
         if (rescuer == null || path == null || path.isEmpty()) return false;
 
@@ -149,11 +316,31 @@ public class AgentController {
             if (!ok) return false;
 
             current = step;
+
+            try { Thread.sleep(aiStepDelayMs); } catch (InterruptedException ignored) { }
         }
         return true;
     }
 
-    /* === انتخاب هدف‌ها === */
+    /* ==============================
+       انتخاب هدف‌ها و ابزارها
+       ============================== */
+
+    private List<Injured> gatherRescuableCandidates() {
+        if (victimManager == null) return null;
+        List<Injured> all = victimManager.getAllVictimsSafe();
+        if (all == null || all.isEmpty()) return all;
+        ArrayList<Injured> out = new ArrayList<Injured>();
+        for (int i = 0; i < all.size(); i++) {
+            Injured v = all.get(i);
+            if (v == null) continue;
+            if (!v.isAlive()) continue;
+            if (v.isRescued()) continue;
+            if (v.isBeingRescued()) continue;
+            out.add(v);
+        }
+        return out;
+    }
 
     private Injured chooseLeastTime(Position from, List<Injured> list) {
         if (list == null || list.isEmpty()) return null;
@@ -176,11 +363,21 @@ public class AgentController {
     }
 
     private Hospital findNearestHospital(List<Hospital> hospitals, Position from) {
-        if (hospitals == null || hospitals.isEmpty() || from == null) return null;
+        if (from == null) return null;
+        List<Hospital> hs = hospitals;
+        if ((hs == null || hs.isEmpty()) && this.hospitalsRef != null) hs = this.hospitalsRef;
+        if ((hs == null || hs.isEmpty())) {
+            try {
+                List<Hospital> fromMap = map.getHospitals();
+                if (fromMap != null && !fromMap.isEmpty()) hs = fromMap;
+            } catch (Throwable ignored) {}
+        }
+        if (hs == null || hs.isEmpty()) return null;
+
         Hospital best = null;
         int bestD = Integer.MAX_VALUE;
-        for (int i = 0; i < hospitals.size(); i++) {
-            Hospital h = hospitals.get(i);
+        for (int i = 0; i < hs.size(); i++) {
+            Hospital h = hs.get(i);
             if (h == null) continue;
             int d = manhattan(from, h.getPosition());
             if (d < bestD) {
@@ -191,7 +388,10 @@ public class AgentController {
         return best;
     }
 
-    /* === انتخاب «کاشی مجاور» === */
+    /** ← میان‌بر جدید: نزدیک‌ترین بیمارستان بر اساس hospitalsRef یا map */
+    private Hospital selectNearestHospital(Position from) {
+        return findNearestHospital(this.hospitalsRef, from);
+    }
 
     /** یکی از چهار تایل مجاورِ بیمارستان که ROAD و آزاد است (نزدیک‌ترین به from). */
     private Position pickBestAdjacentRoadTile(Hospital hospital, Position from) {
@@ -334,12 +534,10 @@ public class AgentController {
     /** تشخیص ROAD با متد مستقیم یا نام نوع */
     private boolean isRoadCell(Cell c) {
         try {
-            // اگر Cell متدی به نام isRoad() دارد
             java.lang.reflect.Method m = c.getClass().getMethod("isRoad");
             Object r = m.invoke(c);
             if (r instanceof Boolean) return ((Boolean) r).booleanValue();
         } catch (Throwable ignored) { }
-        // fallback: نوع شامل "ROAD"
         try {
             java.lang.reflect.Method m2 = c.getClass().getMethod("getType");
             Object t = m2.invoke(c);

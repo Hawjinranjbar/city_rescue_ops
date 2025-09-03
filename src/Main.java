@@ -1,5 +1,3 @@
-
-
 import agent.Rescuer;
 import agent.AgentManager;
 import controller.GameEngine;
@@ -96,9 +94,9 @@ public class Main {
 
                     // 5.1) راه‌اندازی موتور بازی برای امکانات Save/Load
                     AgentManager agentManager = new AgentManager();
-                    for (Rescuer r : rescuers) { agentManager.addRescuer(r); }
+                    for (int i = 0; i < rescuers.size(); i++) { agentManager.addRescuer(rescuers.get(i)); }
                     VictimManager victimManager = new VictimManager();
-                    for (Injured v : victims) { victimManager.addInjured(v); }
+                    for (int i = 0; i < victims.size(); i++) { victimManager.addInjured(victims.get(i)); }
                     List<Hospital> hospitals = scanHospitalsFromMask(cityMap);
                     RescueCoordinator rescueCoordinator = new RescueCoordinator(
                             agentManager,
@@ -190,7 +188,7 @@ public class Main {
                                                 }
                                             }
 
-                        // شمارش نجات‌یافته‌ها
+                                            // شمارش نجات‌یافته‌ها
                                             int resc = 0;
                                             for (int i = 0; i < victims.size(); i++) {
                                                 Injured v = victims.get(i);
@@ -237,13 +235,12 @@ public class Main {
         }
     }
 
-
     /** RoadMask را از TMX می‌خواند و در CityMap ست می‌کند (CSV → int[][] → setRoadMaskFromInts). */
     private static void ensureRoadMaskLoadedFromTMX(CityMap map, String tmxPath) {
         try {
-            Object existing = map.getBinaryLayer("RoadMask");
-            if (existing instanceof boolean[][]) {
-                int cnt = countTrue((boolean[][]) existing);
+            boolean[][] existing = map.getBinaryLayer("RoadMask");
+            if (existing != null) {
+                int cnt = countTrue(existing);
                 System.out.println("[RoadMask] already present. road-tiles=" + cnt);
                 return;
             }
@@ -278,9 +275,9 @@ public class Main {
     /** HospitalMask را از TMX می‌خواند و در CityMap ست می‌کند. */
     private static void ensureHospitalMaskLoadedFromTMX(CityMap map, String tmxPath) {
         try {
-            Object existing = map.getBinaryLayer("HospitalMask");
-            if (existing instanceof boolean[][]) {
-                int cnt = countTrue((boolean[][]) existing);
+            boolean[][] existing = map.getBinaryLayer("HospitalMask");
+            if (existing != null) {
+                int cnt = countTrue(existing);
                 System.out.println("[HospitalMask] already present. tiles=" + cnt);
                 return;
             }
@@ -435,7 +432,7 @@ public class Main {
 
     /** BFS: نزدیک‌ترین کاشی ROAD به نقطهٔ ترجیحی (اولویت با RoadMask). */
     private static Position findNearestRoad(CityMap map, Position preferred) {
-        if (preferred == null) return null;
+        if (map == null || preferred == null) return null;
         int px = clamp(preferred.getX(), 0, map.getWidth() - 1);
         int py = clamp(preferred.getY(), 0, map.getHeight() - 1);
 
@@ -474,6 +471,7 @@ public class Main {
 
     /** اسکن سادهٔ کل نقشه برای یافتن اولین ROAD (اولویت با RoadMask). */
     private static Position scanFirstRoad(CityMap map) {
+        if (map == null) return null;
         for (int y = 0; y < map.getHeight(); y++) {
             for (int x = 0; x < map.getWidth(); x++) {
                 if (safeIsRoad(map, x, y)) return new Position(x, y);

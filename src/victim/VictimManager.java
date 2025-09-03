@@ -33,12 +33,35 @@ public class VictimManager {
         return new ArrayList<Injured>(injuredList);
     }
 
-    /** مجروح‌های قابل نجات (بدون Stream) */
+    /**
+     * همهٔ مجروح‌ها برای استفادهٔ Thread-Base (کپی دفاعی امن).
+     * نام این متد برای کنترلر AI استفاده می‌شود.
+     */
+    public List<Injured> getAllVictimsSafe() {
+        return new ArrayList<Injured>(injuredList);
+    }
+
+    /** فقط مجروح‌های قابل نجات (بدون Stream) */
     public List<Injured> getRescuableVictims() {
         List<Injured> out = new ArrayList<Injured>();
         for (int i = 0; i < injuredList.size(); i++) {
             Injured v = injuredList.get(i);
             if (v != null && v.canBeRescued()) {
+                out.add(v);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * زنده + نجات‌نشده + درحال‌نجات‌نبودن.
+     * (برای الگوریتم‌های انتخاب هدف، اگر نخواستی از canBeRescued استفاده کنی.)
+     */
+    public List<Injured> getAliveAndFree() {
+        List<Injured> out = new ArrayList<Injured>();
+        for (int i = 0; i < injuredList.size(); i++) {
+            Injured v = injuredList.get(i);
+            if (v != null && v.isAlive() && !v.isRescued() && !v.isBeingRescued()) {
                 out.add(v);
             }
         }
@@ -121,6 +144,24 @@ public class VictimManager {
         if (!injured.isDead() && !injured.isRescued()) {
             injured.markAsRescued();
             ScoreManager.applyRescueReward(injured); // +2×زمان اولیه
+        }
+    }
+
+    /**
+     * (اختیاری) یک تیک از همه کم کن؛ اگر زمان کسی تمام شد → مرگ و جریمه.
+     * اگر گیم‌لوپ جای دیگری تیک می‌زند، این متد را صدا نزن.
+     */
+    public void tickAllAndHandleDeaths() {
+        for (int i = 0; i < injuredList.size(); i++) {
+            Injured v = injuredList.get(i);
+            if (v == null) continue;
+            if (v.isDead() || v.isRescued()) continue;
+
+            boolean diedNow = v.updateAndCheckDeath();
+            if (diedNow) {
+                // جریمه: 2×زمان اولیه (داخل ScoreManager هندل شده)
+                ScoreManager.applyDeathPenalty(v);
+            }
         }
     }
 

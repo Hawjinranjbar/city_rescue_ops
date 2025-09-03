@@ -4,12 +4,13 @@ import util.Position;
 
 /**
  * --------------------
- * لایه: Domain Layer
+ * لایه: Domain Layer — map
  * --------------------
- * نمایندهٔ یک بیمارستان روی نقشه + ابزارهای کمکی برای تحویل مجروح:
+ * نمایندهٔ یک بیمارستان روی نقشه + ابزارهای کمکی تحویل مجروح:
  * - یافتن نزدیک‌ترین بیمارستان نسبت به یک نقطه
- * - تشخیص مجاورت یک‌تایل (برای تحویل؛ چون ورود به خود کاشی بیمارستان بلاک است)
- * - گرفتن چهار کاشی مجاور (بالا/پایین/چپ/راست) برای هدف مسیر
+ * - تشخیص برد تحویل (پیش‌فرض: مجاورت یک‌تایل)
+ * - انتخاب بهترین تایل مجاور برای تحویل روی جاده
+ * بدون استفاده از لامبدا و ریفلکشن.
  */
 public class Hospital {
 
@@ -24,6 +25,12 @@ public class Hospital {
     }
 
     // -------------------- دسترسی‌ها --------------------
+    /** برای سازگاری با CityMap.findNearestHospital(...) */
+    public Position getTilePosition() {
+        return position;
+    }
+
+    /** نام قدیمی‌تر (اگر جایی استفاده شده باشد) */
     public Position getPosition() {
         return position;
     }
@@ -64,49 +71,35 @@ public class Hospital {
         return manhattanDistanceTo(p) <= deliveryRange;
     }
 
+    // -------------------- منطق تحویل / انتخاب تایل مجاور --------------------
     /**
      * آیا می‌توان از «این تایل» تحویل انجام داد؟
      * شرط‌ها:
      *  1) موقعیت در برد تحویل (default: مجاورت یک‌تایل)
-     *  2) خود تایل «جاده» باشد (برای حالت آمبولانس که فقط روی جاده حرکت می‌کند)
-     *  3) خودِ تایل بیمارستان نباشد (تحویل در مجاورت انجام می‌شود)
+     *  2) خودِ تایل بیمارستان نباشد
+     *  3) تایل روی جاده باشد (ترجیح حالت آمبولانس/ورود از جاده)
      */
     public boolean canDeliverFrom(Position rescuerPos, CityMap map) {
         if (rescuerPos == null || map == null) return false;
+        if (!map.isValid(rescuerPos.getX(), rescuerPos.getY())) return false;
+
         if (!isWithinDeliveryRange(rescuerPos)) return false;
         if (isSameTile(rescuerPos)) return false;
 
-        if (!map.isValid(rescuerPos.getX(), rescuerPos.getY())) return false;
-        Cell c = map.getCell(rescuerPos.getX(), rescuerPos.getY());
-        if (c == null) return false;
-        if (c.isHospital()) return false;
+        // اجازه نده دقیقاً روی خودِ تایل بیمارستان بایستد (تحویل در مجاورت انجام می‌شود)
+        if (map.isHospitalMask(rescuerPos.getX(), rescuerPos.getY())) return false;
 
-        // ترجیحی: اگر Cell متد isRoad() دارد همان را چک می‌کنیم
-        try {
-            java.lang.reflect.Method m = c.getClass().getMethod("isRoad");
-            Object r = m.invoke(c);
-            if (r instanceof Boolean) {
-                return ((Boolean) r).booleanValue();
-            }
-        } catch (Throwable ignored) { }
+        // روی جاده باشد
+        if (!map.isRoad(rescuerPos.getX(), rescuerPos.getY())) return false;
 
-        // جایگزین: اگر نوع تایل نام "ROAD" دارد
-        try {
-            java.lang.reflect.Method m2 = c.getClass().getMethod("getType");
-            Object t = m2.invoke(c);
-            if (t != null) {
-                String name = t.toString();
-                if (name != null) {
-                    name = name.toUpperCase();
-                    if (name.indexOf("ROAD") >= 0) return true;
-                }
-            }
-        } catch (Throwable ignored) { }
-
-        return false;
+        // و قابل‌عبور باشد (occupied نباشد و CollisionMap اجازه بدهد)
+        return map.isWalkable(rescuerPos.getX(), rescuerPos.getY());
     }
 
-    /** چهار تایل مجاور بیمارستان (بالا/پایین/چپ/راست) برای هدف مسیر */
+    /**
+     * چهار تایل مجاور بیمارستان (بالا/پایین/چپ/راست) برای هدف مسیر
+     * ترتیب: DOWN, LEFT, RIGHT, UP
+     */
     public Position[] getAdjacentTiles() {
         if (position == null) return new Position[0];
         Position[] out = new Position[4];
@@ -115,6 +108,27 @@ public class Hospital {
         out[2] = new Position(position.getX() + 1, position.getY());     // RIGHT
         out[3] = new Position(position.getX(),     position.getY() - 1); // UP
         return out;
+    }
+
+    /**
+     * بهترین تایل برای تحویل: یکی از مجاورها که:
+     * - داخل نقشه باشد
+     * - روی جاده باشد
+     * - walkable باشد (برخورد/اشغال نبودن)
+     * اگر چیزی پیدا نشود، null.
+     */
+    public Position selectBestDeliveryTile(CityMap map) {
+        if (map == null || position == null) return null;
+        Position[] adj = getAdjacentTiles();
+        for (int i = 0; i < adj.length; i++) {
+            Position p = adj[i];
+            if (!map.isValid(p.getX(), p.getY())) continue;
+            if (map.isHospitalMask(p.getX(), p.getY())) continue; // خودِ بیمارستان نباشد
+            if (!map.isRoad(p.getX(), p.getY())) continue;
+            if (!map.isWalkable(p.getX(), p.getY())) continue;
+            return p; // اولین گزینهٔ معتبر
+        }
+        return null;
     }
 
     // -------------------- ابزار انتخاب بیمارستان --------------------
@@ -135,8 +149,30 @@ public class Hospital {
         return best;
     }
 
+    // -------------------- برابری/نمایش --------------------
     @Override
     public String toString() {
         return "Hospital at " + (position != null ? position.toString() : "(null)");
+    }
+
+    @Override
+    public int hashCode() {
+        if (position == null) return 0;
+        int x = position.getX();
+        int y = position.getY();
+        int h = 17;
+        h = 31 * h + x;
+        h = 31 * h + y;
+        return h;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (obj == this) return true;
+        if (!(obj instanceof Hospital)) return false;
+        Hospital other = (Hospital) obj;
+        if (this.position == null || other.position == null) return this.position == other.position;
+        return this.position.getX() == other.position.getX()
+                && this.position.getY() == other.position.getY();
     }
 }

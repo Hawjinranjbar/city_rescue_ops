@@ -10,124 +10,144 @@ import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
-import java.io.File;
-import java.net.URL;
 import java.util.List;
 
 /**
- * HUDPanel — MiniMap on top, info below.
- * نوار کنترل بالا: Pause/Resume, Save, Load, Restart
- * آیکن‌ها اگر پیدا نشدن متن fallback نمایش داده می‌شود.
- * هیچ لامبدایی استفاده نشده.
+ * HUDPanel — MiniMap (اختیاری) + نوار کنترل + اطلاعات + Strategy Info
+ * - آیکن‌ها 100% برداری با Java2D (بدون فایل تصویری)
+ * - تایمر بزرگ با سایه و چشمک‌زن زیر 30 ثانیه
+ * - نمایش نام الگوریتم‌های Strategy Layer (PathFinder و AgentDecision)
+ * - بدون Lambda/Stream
  */
 public class HUDPanel extends JPanel {
 
-    // فاصله‌های ظاهری
+    // ---------- Layout / Theme ----------
     private static final int HUD_GUTTER_PX = 8;
+    private static final Color BG = new Color(12, 12, 12);
+    private static final Color FG = new Color(235, 235, 235);
+    private static final Color BAR_BG = new Color(22, 22, 22);
+    private static final Color CARD_BG = new Color(18, 18, 18);
+    private static final Color ACCENT = new Color(60, 170, 250);
+    private static final Color OK = new Color(80, 200, 120);
+    private static final Color WARN = new Color(235, 90, 80);
 
-    // وضعیت‌های HUD
+    // ---------- State ----------
     private int score;
     private int rescuedCount;
     private int deadCount;
     private int timeLeft; // seconds
 
-    // زیرکامپوننت‌ها
-    private MiniMapPanel miniMapPanel;   // اختیاری
-    private final InfoPanel infoPanel;   // بخش پایینی نوشته‌ها
-    private final JPanel controlBar;     // نوار دکمه‌ها
-
-    // اتصال به موتور
-    private GameEngine gameEngine;       // باید از بیرون تزریق شود
     private boolean paused = false;
+    private boolean blinkOn = true; // برای چشمک‌زدن تایمر
 
-    // دکمه‌ها
+    // Strategy names to display
+    private String pathFinderName = "—";
+    private String decisionName   = "—";
+
+    // ---------- Subcomponents ----------
+    private MiniMapPanel miniMapPanel;         // ممکن است null باشد
+    private final JPanel controlBar;
+    private final InfoPanel infoPanel;
+    private final StrategyPanel strategyPanel;
+
+    // Engine
+    private GameEngine gameEngine;
+
+    // Buttons (vector icons)
     private final JButton btnPause;
     private final JButton btnSave;
     private final JButton btnLoad;
     private final JButton btnRestart;
     private final JButton btnAddAI;
 
-    // ------------------- سازنده‌ها -------------------
+    // Timer for blinking (no lambda)
+    private final javax.swing.Timer hudBlinkTimer;
+
+    // ---------- Constructors ----------
     public HUDPanel() {
         setLayout(new BorderLayout());
-        setBackground(Color.BLACK);
-        setForeground(Color.WHITE);
+        setBackground(BG);
+        setForeground(FG);
         setBorder(new EmptyBorder(HUD_GUTTER_PX, HUD_GUTTER_PX, HUD_GUTTER_PX, HUD_GUTTER_PX));
 
-        // مقادیر اولیه (Engine بعداً آپدیت می‌کند)
-        this.score = 0;
-        this.rescuedCount = 0;
-        this.deadCount = 0;
-        this.timeLeft = 0;
+        score = rescuedCount = deadCount = 0;
+        timeLeft = 0;
 
-        controlBar = buildControlBar();
-        infoPanel  = new InfoPanel();
+        controlBar    = buildControlBar();
+        infoPanel     = new InfoPanel();
+        strategyPanel = new StrategyPanel();
 
         add(controlBar, BorderLayout.NORTH);
-        add(infoPanel,  BorderLayout.SOUTH);
 
-        // حداقل اندازه
-        setPreferredSize(new Dimension(260, 240));
+        JPanel southStack = new JPanel(new GridLayout(2, 1, 0, 8));
+        southStack.setOpaque(false);
+        southStack.add(infoPanel);
+        southStack.add(strategyPanel);
+        add(southStack, BorderLayout.SOUTH);
 
-        // ساخت دکمه‌ها
-        btnPause   = createPauseButton();
-        btnSave    = createIconButton("assets/ui/save.png",    "Quick Save", "Save");
-        btnLoad    = createIconButton("assets/ui/load.png",    "Quick Load", "Load");
-        btnRestart = createIconButton("assets/ui/restart.png", "Restart",    "Restart");
-        btnAddAI   = createIconButton("assets/ui/escape.png",  "Add AI",     "AI");
+        setPreferredSize(new Dimension(300, 280));
 
-        ensureAddAIIcon();
+        btnPause   = createVectorButton(Glyph.PAUSE,   "Pause / Resume", "Pause");
+        btnSave    = createVectorButton(Glyph.SAVE,    "Quick Save",     "Save");
+        btnLoad    = createVectorButton(Glyph.LOAD,    "Quick Load",     "Load");
+        btnRestart = createVectorButton(Glyph.RESTART, "Restart",        "Restart");
+        btnAddAI   = createVectorButton(Glyph.PLUS,    "Add AI Rescuer", "AI");
 
-        wireNonPauseButtons();
-        addButtonsToBar();
+        wireButtons();
+
+        controlBar.add(btnPause);
+        controlBar.add(btnSave);
+        controlBar.add(btnLoad);
+        controlBar.add(btnRestart);
+        controlBar.add(btnAddAI);
+
+        // Blink timer (هر 500ms)
+        hudBlinkTimer = new javax.swing.Timer(500, new ActionListener() {
+            @Override public void actionPerformed(ActionEvent e) {
+                // اگر زمان کم باشد، چشمک بزن
+                if (timeLeft <= 30) {
+                    blinkOn = !blinkOn;
+                    infoPanel.repaint();
+                } else if (!blinkOn) {
+                    // اگر از محدوده خطر خارج شد، روشن نگه داریم
+                    blinkOn = true;
+                    infoPanel.repaint();
+                }
+            }
+        });
+        hudBlinkTimer.setRepeats(true);
+        hudBlinkTimer.start();
     }
 
     public HUDPanel(CityMap cityMap, List<Rescuer> rescuers, List<Injured> victims) {
-        setLayout(new BorderLayout());
-        setBackground(Color.BLACK);
-        setForeground(Color.WHITE);
-        setBorder(new EmptyBorder(HUD_GUTTER_PX, HUD_GUTTER_PX, HUD_GUTTER_PX, HUD_GUTTER_PX));
-
-        this.score = 0;
-        this.rescuedCount = 0;
-        this.deadCount = 0;
-        this.timeLeft = 0;
-
-        controlBar   = buildControlBar();
-        miniMapPanel = new MiniMapPanel(cityMap, rescuers, victims);
-        infoPanel    = new InfoPanel();
-
-        add(controlBar,   BorderLayout.NORTH);
-        add(miniMapPanel, BorderLayout.CENTER);
-        add(infoPanel,    BorderLayout.SOUTH);
-
-        int w = miniMapPanel.getPreferredSize().width + HUD_GUTTER_PX * 2;
-        int h = miniMapPanel.getPreferredSize().height + 140 + HUD_GUTTER_PX * 2;
-        setPreferredSize(new Dimension(w, h));
-
-        btnPause   = createPauseButton();
-        btnSave    = createIconButton("assets/ui/save.png",    "Quick Save", "Save");
-        btnLoad    = createIconButton("assets/ui/load.png",    "Quick Load", "Load");
-        btnRestart = createIconButton("assets/ui/restart.png", "Restart",    "Restart");
-        btnAddAI   = createIconButton("assets/ui/escape.png",  "Add AI",     "AI");
-        ensureAddAIIcon();
-        wireNonPauseButtons();
-        addButtonsToBar();
+        this();
+        bindMiniMap(cityMap, rescuers, victims);
     }
 
-    // ------------------- اتصال موتور -------------------
+    // ---------- Engine wiring ----------
     public void setGameEngine(GameEngine engine) {
         this.gameEngine = engine;
         System.out.println("[HUDPanel] GameEngine injected: " + (engine != null));
     }
 
-    /** دسترسی به MiniMap داخلی برای تزریق به GameEngine */
     public MiniMapPanel getMiniMapPanel() {
         return miniMapPanel;
     }
 
-    // ------------------- API آپدیت -------------------
+    public void bindMiniMap(CityMap cityMap, List<Rescuer> rescuers, List<Injured> victims) {
+        if (miniMapPanel == null) {
+            miniMapPanel = new MiniMapPanel(cityMap, rescuers, victims);
+            add(miniMapPanelCard(miniMapPanel), BorderLayout.CENTER);
+            revalidate();
+        } else {
+            miniMapPanel.updateMiniMap(cityMap, rescuers, victims);
+        }
+        repaint();
+    }
+
+    // ---------- Public API ----------
     public void updateHUD(int score, int rescued, int dead) {
         this.score = score;
         this.rescuedCount = rescued;
@@ -142,184 +162,325 @@ public class HUDPanel extends JPanel {
         this.deadCount = dead;
         this.timeLeft = (timeLeft < 0) ? 0 : timeLeft;
 
-        if (miniMapPanel != null) {
-            miniMapPanel.updateMiniMap(cityMap, rescuers, victims);
-        }
+        if (miniMapPanel != null) miniMapPanel.updateMiniMap(cityMap, rescuers, victims);
         revalidate();
         repaint();
     }
 
-    // ------------------- زیرکلاس: اطلاعات -------------------
-    private class InfoPanel extends JPanel {
-        InfoPanel() {
-            setPreferredSize(new Dimension(240, 110));
-            setBackground(Color.BLACK);
-            setForeground(Color.WHITE);
-            setBorder(new EmptyBorder(6, 6, 6, 6));
-        }
-        @Override
-        protected void paintComponent(Graphics g) {
-            super.paintComponent(g);
-            g.setColor(getForeground());
-            g.setFont(new Font("Arial", Font.BOLD, 26));
-            g.drawString("⏱  " + formatTime(timeLeft), 10, 32);
-            g.setFont(new Font("Arial", Font.BOLD, 18));
-            g.drawString("Score: " + score, 10, 58);
-            g.setFont(new Font("Arial", Font.PLAIN, 15));
-            g.drawString("Rescued: " + rescuedCount, 10, 82);
-            g.drawString("Dead: " + deadCount, 10, 102);
-        }
+    /** فقط زمان را بروزرسانی کن (برای تیک هر ثانیه) */
+    public void setTimeLeft(int seconds) {
+        this.timeLeft = seconds < 0 ? 0 : seconds;
+        repaint();
     }
 
-    // ------------------- نوار کنترل -------------------
+    /** سنکرون‌سازی Pause از بیرون (مثلاً بعد از Resume/Restart) */
+    public void setPaused(boolean paused) {
+        this.paused = paused;
+        if (btnPause != null) {
+            setGlyph(btnPause, paused ? Glyph.PLAY : Glyph.PAUSE, paused ? "Resume / Pause" : "Pause / Resume", paused ? "Resume" : "Pause");
+        }
+        repaint();
+    }
+
+    /** نمایش نام استراتژی‌ها روی HUD */
+    public void setStrategyInfo(String pathFinderName, String decisionName) {
+        this.pathFinderName = (pathFinderName != null && pathFinderName.length() > 0) ? pathFinderName : "—";
+        this.decisionName   = (decisionName   != null && decisionName.length()   > 0) ? decisionName   : "—";
+        strategyPanel.repaint();
+    }
+
+    // ---------- UI building ----------
     private JPanel buildControlBar() {
         JPanel bar = new JPanel();
         bar.setOpaque(true);
-        bar.setBackground(new Color(20, 20, 20));
+        bar.setBackground(BAR_BG);
         bar.setLayout(new FlowLayout(FlowLayout.LEFT, 8, 4));
-        bar.setBorder(new EmptyBorder(2, 2, 2, 2));
+        bar.setBorder(new EmptyBorder(4, 6, 4, 6));
         return bar;
     }
 
-    private void addButtonsToBar() {
-        controlBar.removeAll();
-        controlBar.add(btnPause);
-        controlBar.add(btnSave);
-        controlBar.add(btnLoad);
-        controlBar.add(btnRestart);
-        controlBar.add(btnAddAI);
-        controlBar.revalidate();
-        controlBar.repaint();
+    private JComponent miniMapPanelCard(JComponent inner) {
+        JPanel card = new JPanel(new BorderLayout());
+        card.setOpaque(true);
+        card.setBackground(CARD_BG);
+        card.setBorder(new EmptyBorder(6, 6, 6, 6));
+        card.add(inner, BorderLayout.CENTER);
+        return card;
     }
 
-    // ------------------- دکمه Pause/Resume -------------------
-    private JButton createPauseButton() {
-        final JButton b = createIconButton("assets/ui/pause.png", "Pause / Resume", "Pause");
-        b.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                if (gameEngine == null) {
-                    System.out.println("[HUDPanel] Pause clicked BUT gameEngine==null");
-                    return;
-                }
+    // ---------- Buttons wiring ----------
+    private void wireButtons() {
+        // Pause/Resume
+        btnPause.addActionListener(new ActionListener() {
+            @Override public void actionPerformed(ActionEvent e) {
+                if (gameEngine == null) { System.out.println("[HUDPanel] Pause clicked BUT gameEngine==null"); return; }
                 if (!paused) {
-                    System.out.println("[HUDPanel] Pause → stop()");
                     try { gameEngine.stop(); } catch (Throwable ignored) {}
                     paused = true;
-                    setIconOrText(b, "assets/ui/resume.png", "Resume");
+                    setGlyph(btnPause, Glyph.PLAY, "Resume / Pause", "Resume");
                 } else {
-                    System.out.println("[HUDPanel] Resume → start()");
                     try { gameEngine.start(); } catch (Throwable ignored) {}
                     paused = false;
-                    setIconOrText(b, "assets/ui/pause.png", "Pause");
+                    setGlyph(btnPause, Glyph.PAUSE, "Pause / Resume", "Pause");
                 }
             }
         });
-        return b;
-    }
 
-    // دکمه‌های Save/Load/Restart
-    private void wireNonPauseButtons() {
+        // Save
         btnSave.addActionListener(new ActionListener() {
             @Override public void actionPerformed(ActionEvent e) {
                 if (gameEngine == null) { System.out.println("[HUDPanel] Save clicked BUT gameEngine==null"); return; }
-                System.out.println("[HUDPanel] Save → saveQuick()");
                 try { gameEngine.saveQuick(); } catch (Throwable t) { t.printStackTrace(); }
             }
         });
+
+        // Load
         btnLoad.addActionListener(new ActionListener() {
             @Override public void actionPerformed(ActionEvent e) {
                 if (gameEngine == null) { System.out.println("[HUDPanel] Load clicked BUT gameEngine==null"); return; }
-                System.out.println("[HUDPanel] Load → loadQuick()");
                 try { gameEngine.loadQuick(); } catch (Throwable t) { t.printStackTrace(); }
             }
         });
+
+        // Restart
         btnRestart.addActionListener(new ActionListener() {
             @Override public void actionPerformed(ActionEvent e) {
                 if (gameEngine == null) { System.out.println("[HUDPanel] Restart clicked BUT gameEngine==null"); return; }
-                System.out.println("[HUDPanel] Restart → restartGame()");
                 try { gameEngine.restartGame(); } catch (Throwable t) { t.printStackTrace(); }
+                setPaused(false);
             }
         });
+
+        // Add AI
         btnAddAI.addActionListener(new ActionListener() {
             @Override public void actionPerformed(ActionEvent e) {
                 if (gameEngine == null) { System.out.println("[HUDPanel] AddAI clicked BUT gameEngine==null"); return; }
-                System.out.println("[HUDPanel] AddAI → spawnAIRescuer()");
                 try { gameEngine.spawnAIRescuer(); } catch (Throwable t) { t.printStackTrace(); }
             }
         });
-
     }
 
-    /** اطمینان از اینکه دکمه AI همیشه یک آیکن دارد */
-    private void ensureAddAIIcon() {
-        if (btnAddAI.getIcon() == null) {
-            btnAddAI.setIcon(buildAddIcon());
-            btnAddAI.setText("");
+    // ---------- Panels ----------
+    private class InfoPanel extends JPanel {
+        InfoPanel() {
+            setOpaque(true);
+            setBackground(CARD_BG);
+            setForeground(FG);
+            setBorder(new EmptyBorder(8, 10, 10, 10));
+            setPreferredSize(new Dimension(260, 120));
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            Graphics2D g2 = (Graphics2D) g;
+
+            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+
+            // Timer
+            String t = "⏱  " + formatTime(timeLeft);
+            int x = 10;
+            int y = 40;
+
+            // Shadow
+            g2.setFont(new Font("Arial", Font.BOLD, 36));
+            if (timeLeft <= 30) {
+                // چشمک‌زن: وقتی blinkOn=false، فقط سایه را می‌بینی (افکت چشمک)
+                if (!blinkOn) {
+                    g2.setColor(new Color(0, 0, 0, 100));
+                    g2.drawString(t, x + 2, y + 2);
+                } else {
+                    g2.setColor(new Color(0, 0, 0, 120));
+                    g2.drawString(t, x + 2, y + 2);
+                    g2.setColor(WARN);
+                    g2.drawString(t, x, y);
+                }
+            } else {
+                g2.setColor(new Color(0, 0, 0, 120));
+                g2.drawString(t, x + 2, y + 2);
+                g2.setColor(FG);
+                g2.drawString(t, x, y);
+            }
+
+            // Score
+            g2.setFont(new Font("Arial", Font.BOLD, 18));
+            g2.setColor(FG);
+            g2.drawString("Score: " + score, 10, 68);
+
+            // Stats row
+            g2.setFont(new Font("Arial", Font.PLAIN, 15));
+            // Badge Rescued (سبز)
+            drawBadge(g2, "Rescued: " + rescuedCount, 10, 94, OK);
+            // Badge Dead (قرمز)
+            drawBadge(g2, "Dead: " + deadCount, 160, 94, WARN);
+        }
+
+        private void drawBadge(Graphics2D g2, String text, int x, int y, Color color) {
+            FontMetrics fm = g2.getFontMetrics();
+            int w = fm.stringWidth(text) + 16;
+            int h = 20;
+            Shape round = new RoundRectangle2D.Float(x - 8, y - h + 4, w, h, 12, 12);
+            g2.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), 40));
+            g2.fill(round);
+            g2.setColor(color);
+            g2.draw(round);
+            g2.drawString(text, x, y);
         }
     }
 
-    /** آیکن پلاس سبز ساده برای افزودن نجات‌گر AI */
-    private Icon buildAddIcon() {
-        int size = 24;
-        BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g = img.createGraphics();
-        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        g.setColor(new Color(40, 200, 40));
-        g.setStroke(new BasicStroke(4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-        int mid = size / 2;
-        g.drawLine(mid, 4, mid, size - 4);
-        g.drawLine(4, mid, size - 4, mid);
-        g.dispose();
-        return new ImageIcon(img);
+    private class StrategyPanel extends JPanel {
+        StrategyPanel() {
+            setOpaque(true);
+            setBackground(CARD_BG);
+            setForeground(FG);
+            setBorder(new EmptyBorder(8, 10, 10, 10));
+            setPreferredSize(new Dimension(260, 80));
+        }
 
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            Graphics2D g2 = (Graphics2D) g;
+            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+
+            g2.setFont(new Font("Arial", Font.BOLD, 16));
+            g2.setColor(ACCENT);
+            g2.drawString("Strategy", 10, 22);
+
+            g2.setFont(new Font("Arial", Font.PLAIN, 14));
+            g2.setColor(FG);
+            g2.drawString("PathFinder:", 10, 48);
+            g2.drawString(pathFinderName, 100, 48);
+
+            g2.drawString("Decision:", 10, 70);
+            g2.drawString(decisionName, 100, 70);
+        }
     }
 
-    // ------------------- هِلپر ساخت دکمه آیکن‌دار -------------------
-    private JButton createIconButton(String iconPath, String tooltip, String fallbackText) {
+    // ---------- Vector Icons ----------
+    private enum Glyph { PAUSE, PLAY, SAVE, LOAD, RESTART, PLUS }
+
+    private JButton createVectorButton(Glyph glyph, String tooltip, String fallbackText) {
         JButton b = new JButton();
         b.setFocusable(false);
         b.setBackground(new Color(30, 30, 30));
-        b.setForeground(new Color(230, 230, 230));
-        b.setBorder(new EmptyBorder(2, 8, 2, 8));
+        b.setForeground(FG);
+        b.setBorder(new EmptyBorder(4, 10, 4, 10));
         b.setToolTipText(tooltip);
-        setIconOrText(b, iconPath, fallbackText);
+        setGlyph(b, glyph, tooltip, fallbackText);
         return b;
     }
 
-    /** تلاش برای لود آیکن؛ اگر نبود متن نشان بده. */
-    private void setIconOrText(AbstractButton b, String path, String fallback) {
-        ImageIcon icon = loadIcon(path);
-        if (icon != null && icon.getIconWidth() > 0) {
-            b.setIcon(icon);
-            b.setText("");
-        } else {
+    private void setGlyph(AbstractButton b, Glyph glyph, String tooltip, String fallbackText) {
+        b.setToolTipText(tooltip);
+        b.setIcon(new VectorIcon(glyph, 22, FG));
+        b.setText("");
+        b.setHorizontalTextPosition(SwingConstants.RIGHT);
+        b.setIconTextGap(6);
+        // اگر آیکن بنا به هر دلیلی نتوانست render شود، متن fallback را بگذاریم:
+        Icon ic = b.getIcon();
+        if (ic == null || ic.getIconWidth() <= 0) {
             b.setIcon(null);
-            b.setText(fallback);
+            b.setText(fallbackText);
         }
     }
 
-    private ImageIcon loadIcon(String path) {
-        // 1) تلاش از classpath
-        try {
-            String normalized = path.startsWith("/") ? path : "/" + path;
-            URL url = HUDPanel.class.getResource(normalized);
-            if (url == null) url = HUDPanel.class.getResource(path);
-            if (url != null) return new ImageIcon(url);
-        } catch (Throwable ignore) { }
-        // 2) تلاش از فایل سیستم
-        try {
-            File f = new File(path);
-            if (f.exists()) return new ImageIcon(path);
-        } catch (Throwable ignore) { }
-        return null;
+    /** آیکن برداری ساده با Java2D */
+    private static class VectorIcon implements Icon {
+        private final Glyph glyph;
+        private final int size;
+        private final Color color;
+
+        VectorIcon(Glyph glyph, int size, Color color) {
+            this.glyph = glyph;
+            this.size = size;
+            this.color = color;
+        }
+
+        @Override public int getIconWidth() { return size; }
+        @Override public int getIconHeight() { return size; }
+
+        @Override
+        public void paintIcon(Component c, Graphics g, int x, int y) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.translate(x, y);
+            g2.setColor(color);
+            float s = (float) size;
+
+            switch (glyph) {
+                case PAUSE: {
+                    float w = s * 0.24f;
+                    float gap = s * 0.14f;
+                    float h = s * 0.72f;
+                    float top = (s - h) / 2f;
+                    g2.fill(new RoundRectangle2D.Float(s * 0.18f, top, w, h, 4, 4));
+                    g2.fill(new RoundRectangle2D.Float(s * 0.18f + w + gap, top, w, h, 4, 4));
+                    break;
+                }
+                case PLAY: {
+                    Polygon p = new Polygon();
+                    p.addPoint((int)(s*0.28f), (int)(s*0.20f));
+                    p.addPoint((int)(s*0.28f), (int)(s*0.80f));
+                    p.addPoint((int)(s*0.80f), (int)(s*0.50f));
+                    g2.fillPolygon(p);
+                    break;
+                }
+                case SAVE: {
+                    // فلoppy: بدنه + برچسب
+                    g2.drawRoundRect((int)(s*0.12f), (int)(s*0.12f), (int)(s*0.76f), (int)(s*0.76f), 6, 6);
+                    g2.fillRect((int)(s*0.24f), (int)(s*0.18f), (int)(s*0.44f), (int)(s*0.16f));
+                    g2.drawRect((int)(s*0.20f), (int)(s*0.46f), (int)(s*0.60f), (int)(s*0.30f));
+                    break;
+                }
+                case LOAD: {
+                    // پوشه + پیکان
+                    g2.drawRoundRect((int)(s*0.14f), (int)(s*0.22f), (int)(s*0.72f), (int)(s*0.54f), 6, 6);
+                    Polygon a = new Polygon();
+                    a.addPoint((int)(s*0.50f), (int)(s*0.24f));
+                    a.addPoint((int)(s*0.70f), (int)(s*0.44f));
+                    a.addPoint((int)(s*0.58f), (int)(s*0.44f));
+                    a.addPoint((int)(s*0.58f), (int)(s*0.68f));
+                    a.addPoint((int)(s*0.42f), (int)(s*0.68f));
+                    a.addPoint((int)(s*0.42f), (int)(s*0.44f));
+                    a.addPoint((int)(s*0.30f), (int)(s*0.44f));
+                    g2.fillPolygon(a);
+                    break;
+                }
+                case RESTART: {
+                    // فلش چرخان
+                    int r = (int)(s*0.28f);
+                    int cx = (int)(s*0.50f);
+                    int cy = (int)(s*0.55f);
+                    g2.drawArc(cx - r, cy - r, r*2, r*2, 40, 260);
+                    Polygon head = new Polygon();
+                    head.addPoint((int)(s*0.68f), (int)(s*0.24f));
+                    head.addPoint((int)(s*0.86f), (int)(s*0.26f));
+                    head.addPoint((int)(s*0.74f), (int)(s*0.38f));
+                    g2.fillPolygon(head);
+                    break;
+                }
+                case PLUS: {
+                    Stroke old = g2.getStroke();
+                    g2.setStroke(new BasicStroke(3f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                    g2.drawLine((int)(s*0.50f), (int)(s*0.20f), (int)(s*0.50f), (int)(s*0.80f));
+                    g2.drawLine((int)(s*0.20f), (int)(s*0.50f), (int)(s*0.80f), (int)(s*0.50f));
+                    g2.setStroke(old);
+                    break;
+                }
+                default: break;
+            }
+            g2.dispose();
+        }
     }
 
-    // ------------------- هِلپرهای عمومی -------------------
+    // ---------- Helpers ----------
     private String formatTime(int seconds) {
         if (seconds < 0) seconds = 0;
         int m = seconds / 60;
         int s = seconds % 60;
-        return String.format("%02d:%02d", m, s);
+        String mm = (m < 10 ? "0" + m : String.valueOf(m));
+        String ss = (s < 10 ? "0" + s : String.valueOf(s));
+        return mm + ":" + ss;
     }
 }
