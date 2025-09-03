@@ -143,6 +143,7 @@ public class GameEngine {
                 (int) victimManager.countDead()
         );
 
+
         if (gamePanel != null) gamePanel.repaint();
         if (hudPanel != null) hudPanel.repaint();
 
