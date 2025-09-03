@@ -8,6 +8,7 @@ import map.CityMap;
 import map.Hospital;
 import ui.GamePanel;
 import ui.HUDPanel;
+import ui.KeyHandler;
 import ui.MiniMapPanel;
 import util.Logger;
 import util.Position;
@@ -46,6 +47,8 @@ public class GameEngine {
     private final javax.swing.Timer gameLoopTimer;
     /** وضعیت جاری تزریق‌شده (برای Save/Load) */
     private final GameState state;
+    /** جهت هماهنگی دنیای بازی با ورودی‌ها بعد از Load/Restart */
+    private KeyHandler keyHandler;
 
     /** برای تشخیص ورود تازه به حالت آمبولانس (Pickup) */
     private final Map<Integer, Boolean> prevAmbulanceState = new HashMap<Integer, Boolean>();
@@ -98,6 +101,10 @@ public class GameEngine {
             logger.logError("GameEngine.<init>/logGameStart", ex);
         }
 
+
+        // در شروع بازی یک اسنپ‌شات اولیه برای Restart ثبت می‌کنیم (خود فایل ذخیره نمی‌شود)
+        try { SaveManager.setInitialState(captureGameState()); } catch (Exception ignored) { }
+
         // اسنپ‌شات اولیه برای Restart (در فایل ذخیره نمی‌شود)
         try { SaveManager.setInitialState(captureGameState()); } catch (Throwable ignored) {}
 
@@ -109,6 +116,13 @@ public class GameEngine {
             }
         });
     }
+
+    /** ثبت KeyHandler برای هماهنگ‌سازی پس از Load/Restart */
+    public void setKeyHandler(KeyHandler handler) {
+        this.keyHandler = handler;
+    }
+
+    // ------------------------------------------------------------------------
 
     // ------------------------------
     // کنترل حلقه
@@ -247,7 +261,11 @@ public class GameEngine {
         pauseAll();
         try {
             SaveManager.saveGameToPath(captureGameState(), path);
+
+            logger.logInfo("Game saved to: " + path);
+
             logger.logSaveSuccess(path);
+
         } catch (Exception ex) {
             logger.logSaveFailed(path, ex);
         } finally {
@@ -292,6 +310,19 @@ public class GameEngine {
     private void applyGameState(GameState loaded) {
         if (loaded == null) return;
 
+
+        // امتیاز
+        ScoreManager.resetToDefault();
+        int loadedScore = loaded.getScore();
+        int baseScore = ScoreManager.getScore();
+        if (loadedScore > baseScore) {
+            ScoreManager.add(loadedScore - baseScore);
+        } else if (loadedScore < baseScore) {
+            ScoreManager.deduct(baseScore - loadedScore);
+        }
+
+        // بازسازی قربانی‌ها از اسنپ‌شات
+
         // --- امتیاز ---
         try {
             ScoreManager.setScore(loaded.getScore());
@@ -305,12 +336,23 @@ public class GameEngine {
         }
 
         // --- بازسازی قربانی‌ها از DTO ---
+
         Map<Integer, Injured> victimMap = new HashMap<Integer, Injured>();
         List<Injured> newVictims = new ArrayList<Injured>();
         List<GameState.InjuredDTO> vSnap = loaded.getVictimSnapshot();
         if (vSnap != null) {
             for (int i = 0; i < vSnap.size(); i++) {
                 GameState.InjuredDTO dto = vSnap.get(i);
+
+                InjurySeverity sev = InjurySeverity.LOW;
+                try { if (dto.severity != null) sev = InjurySeverity.valueOf(dto.severity); } catch (Throwable ignore) { }
+                Injured inj = new Injured(dto.id, new Position(dto.tileX, dto.tileY), sev);
+                if (dto.alive) { inj.markAsAlive(); }
+                if (dto.rescued) { inj.markAsRescued(); }
+                if (!dto.alive && !dto.rescued) { inj.markAsDead(); }
+                if (dto.critical) { inj.markAsCritical(); }
+                inj.setRemainingTime((int) dto.remainingMillis);
+
 
                 InjurySeverity sev = InjurySeverity.LOW;
                 try {
@@ -326,12 +368,13 @@ public class GameEngine {
 
                 inj.setRemainingTime((int) dto.remainingMillis);
 
+
                 victimMap.put(dto.id, inj);
                 newVictims.add(inj);
             }
         }
 
-        // --- بازسازی نجات‌دهنده‌ها از DTO ---
+
         List<Rescuer> newRescuers = new ArrayList<Rescuer>();
         List<GameState.RescuerDTO> rSnap = loaded.getRescuerSnapshot();
         if (rSnap != null) {
@@ -342,6 +385,45 @@ public class GameEngine {
                 r.setBusy(dto.busy);
                 r.setAmbulanceMode(dto.ambulanceMode);
                 r.setNoClip(dto.noClip);
+
+                if (dto.carryingVictimId != null) {
+                    Injured carried = victimMap.get(dto.carryingVictimId.intValue());
+                    if (carried != null) {
+                        r.attachVictim(carried);
+                    }
+                }
+                newRescuers.add(r);
+            }
+        }
+
+        // بازسازی بیمارستان‌ها
+        List<Hospital> currentHospitals = this.state.getHospitals();
+        if (currentHospitals != null) currentHospitals.clear();
+        List<GameState.HospitalDTO> hSnap = loaded.getHospitalSnapshot();
+        if (hSnap != null) {
+            for (int i = 0; i < hSnap.size(); i++) {
+                GameState.HospitalDTO dto = hSnap.get(i);
+                if (currentHospitals != null) {
+                    currentHospitals.add(new Hospital(new Position(dto.tileX, dto.tileY)));
+                }
+            }
+        }
+
+        // جایگزینی درجا (تا رفرنس‌های بیرونی مانند KeyHandler یا Threadها معتبر بمانند)
+        List<Rescuer> currRescuers = this.state.getRescuers();
+        if (currRescuers != null) {
+            currRescuers.clear();
+            currRescuers.addAll(newRescuers);
+        }
+        agentManager.replaceAll(currRescuers);
+
+        List<Injured> currVictims = this.state.getVictims();
+        if (currVictims != null) {
+            currVictims.clear();
+            currVictims.addAll(newVictims);
+        }
+        victimManager.replaceAll(currVictims);
+
 
                 if (dto.carryingVictimId != null) {
                     Injured carried = victimMap.get(dto.carryingVictimId.intValue());
@@ -361,8 +443,18 @@ public class GameEngine {
             }
         }
 
+
         // --- جایگزینی State ---
         try {
+
+            hudPanel.updateHUD(
+                    ScoreManager.getScore(),
+                    (int) victimManager.countRescued(),
+                    (int) victimManager.countDead()
+            );
+            List<Rescuer> rescuersForRender = new ArrayList<Rescuer>(currRescuers);
+            List<Injured> victimsForRender = new ArrayList<Injured>(currVictims);
+
             this.state.replaceWith(loaded);
         } catch (Throwable t) {
             try {
@@ -388,6 +480,7 @@ public class GameEngine {
                 );
             }
 
+
             CityMap map = this.state.getMap();
             List<Rescuer> rr = new ArrayList<Rescuer>(agentManager.getAllRescuers());
             List<Injured> vv = victimManager.getAll();
@@ -399,6 +492,11 @@ public class GameEngine {
             if (miniMapPanel != null) {
                 miniMapPanel.updateMiniMap(map, rr, vv);
                 try { miniMapPanel.repaint(); } catch (Throwable ignored) {}
+            }
+
+            if (keyHandler != null) {
+                Rescuer first = currRescuers.isEmpty() ? null : currRescuers.get(0);
+                keyHandler.onWorldReloaded(currRescuers, first, currVictims, map);
             }
         } catch (Exception ex) {
             logger.logError("GameEngine.applyGameState/refreshUI", ex);
@@ -486,6 +584,47 @@ public class GameEngine {
         }
 
         // Hospitals
+        List<Hospital> hosp = state.getHospitals();
+        if (hosp != null) {
+            for (int i = 0; i < hosp.size(); i++) {
+                Hospital h = hosp.get(i);
+                if (h != null && h.getPosition() != null) {
+                    snap.addHospitalSnapshot(h.getPosition().getX(), h.getPosition().getY());
+                }
+            }
+        }
+        return snap;
+    }
+
+    private GameState captureGameState() {
+        GameState snap = new GameState();
+        snap.setScore(ScoreManager.getScore());
+
+        CityMap map = state.getMap();
+        if (map != null) {
+            try { snap.setSnapshotMapInfo(null, map.getWidth(), map.getHeight(), map.getTileWidth(), map.getTileHeight()); } catch (Throwable ignore) { }
+        }
+
+        Collection<Rescuer> rescuers = agentManager.getAllRescuers();
+        for (Rescuer r : rescuers) {
+            if (r == null) continue;
+            Position p = r.getPosition();
+            Integer cid = null;
+            Injured cv = r.getCarryingVictim();
+            if (cv != null) cid = cv.getId();
+            snap.addRescuerSnapshot(r.getId(), p != null ? p.getX() : 0, p != null ? p.getY() : 0, r.getDirection(), r.isBusy(), r.isAmbulanceMode(), cid, r.isNoClip());
+        }
+
+        List<Injured> victims = victimManager.getAll();
+        for (int i = 0; i < victims.size(); i++) {
+            Injured v = victims.get(i);
+            if (v == null) continue;
+            Position p = v.getPosition();
+            String sev = null;
+            try { if (v.getSeverity() != null) sev = v.getSeverity().name(); } catch (Throwable ignore) { }
+            snap.addVictimSnapshot(v.getId(), p != null ? p.getX() : 0, p != null ? p.getY() : 0, sev, !v.isDead(), v.isRescued(), v.isCritical(), v.getRemainingTime());
+        }
+
         List<Hospital> hosp = state.getHospitals();
         if (hosp != null) {
             for (int i = 0; i < hosp.size(); i++) {
