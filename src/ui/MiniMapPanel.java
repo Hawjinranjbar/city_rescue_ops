@@ -242,6 +242,9 @@ public class MiniMapPanel extends JPanel {
         // Legend
         drawLegendResponsive(g, ox, oy + MINIMAP_H + 8, MINIMAP_W, LEGEND_H - 12);
 
+        // علامت ثابت بیمارستان در گوشه بالا-چپ
+        drawHospitalIcon(g, ox + HOSP_S / 2, oy + HOSP_S / 2);
+
         g.dispose();
     }
 
