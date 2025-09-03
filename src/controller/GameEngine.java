@@ -133,6 +133,7 @@ public class GameEngine {
         if (miniMapPanel != null) {
             miniMapPanel.updateMiniMap(map, rescuerList, state.getVictims());
         }
+
         if (gamePanel != null) {
             gamePanel.updateData(map, rescuerList, state.getVictims());
         }
@@ -141,6 +142,9 @@ public class GameEngine {
                 (int) victimManager.countRescued(),
                 (int) victimManager.countDead()
         );
+
+        if (gamePanel != null) gamePanel.repaint();
+        if (hudPanel != null) hudPanel.repaint();
 
         start();
     }
