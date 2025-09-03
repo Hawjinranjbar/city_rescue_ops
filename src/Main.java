@@ -1,18 +1,27 @@
 
 
 import agent.Rescuer;
+import agent.AgentManager;
+import controller.GameEngine;
+import controller.RescueCoordinator;
 import controller.ScoreManager;
+import file.GameState;
 import map.Cell;
 import map.CityMap;
 import map.MapLoader;
+import map.Hospital;
 import playercontrol.DecisionInterface;
+import strategy.AStarPathFinder;
+import strategy.InjuryPrioritySelector;
 import ui.GamePanel;
 import ui.HUDPanel;
 import ui.KeyHandler;
 import util.CollisionMap;
+import util.Logger;
 import util.Position;
 import victim.Injured;
 import victim.InjurySeverity;
+import victim.VictimManager;
 
 import javax.swing.*;
 import java.awt.*;
@@ -85,6 +94,26 @@ public class Main {
                     hud.updateHUD(ScoreManager.getScore(), rescuedCount, deadCount, timeLeft[0],
                             cityMap, rescuers, victims);
 
+                    // 5.1) راه‌اندازی موتور بازی برای امکانات Save/Load
+                    AgentManager agentManager = new AgentManager();
+                    for (Rescuer r : rescuers) { agentManager.addRescuer(r); }
+                    VictimManager victimManager = new VictimManager();
+                    for (Injured v : victims) { victimManager.addInjured(v); }
+                    List<Hospital> hospitals = new ArrayList<Hospital>();
+                    RescueCoordinator rescueCoordinator = new RescueCoordinator(
+                            agentManager,
+                            victimManager,
+                            hospitals,
+                            cityMap,
+                            collisionMap,
+                            new AStarPathFinder(cityMap),
+                            new InjuryPrioritySelector()
+                    );
+                    GameState gameState = new GameState(cityMap, rescuers, victims, hospitals, ScoreManager.getScore());
+                    final GameEngine engine = new GameEngine(gameState, rescueCoordinator, agentManager, victimManager,
+                            hud, panel, hud.getMiniMapPanel(), new Logger("logs/game.log", true));
+                    hud.setGameEngine(engine);
+
                     // 6) کنترل کیبورد (بدون لامبدا)
                     DecisionInterface decision = new DecisionInterface() {
                         @Override
@@ -100,8 +129,8 @@ public class Main {
                         }
                     };
 
-                    // KeyHandler با HUD (۸ آرگومان)
-                    KeyHandler kh = new KeyHandler(rescuers, r1, decision, cityMap, collisionMap, panel, victims, hud);
+                    // KeyHandler با HUD و موتور بازی
+                    KeyHandler kh = new KeyHandler(rescuers, r1, decision, cityMap, collisionMap, panel, victims, hud, engine);
                     panel.addKeyListener(kh);
                     kh.setVehicleCollision(collisionMap); // اگر خواستی آزاد باشد: kh.setVehicleCollision(null);
 
