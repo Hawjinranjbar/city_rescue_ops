@@ -1,23 +1,30 @@
 
 
 import agent.Rescuer;
+import agent.AgentManager;
+import controller.GameEngine;
+import controller.RescueCoordinator;
 import controller.ScoreManager;
+import file.GameState;
 import map.Cell;
 import map.CityMap;
 import map.MapLoader;
+import map.Hospital;
 import playercontrol.DecisionInterface;
+import strategy.AStarPathFinder;
+import strategy.InjuryPrioritySelector;
 import ui.GamePanel;
 import ui.HUDPanel;
 import ui.KeyHandler;
 import util.CollisionMap;
+import util.Logger;
 import util.Position;
 import victim.Injured;
 import victim.InjurySeverity;
+import victim.VictimManager;
 
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -39,8 +46,8 @@ public class Main {
     private static int nextVictimId = 1; // شناسه یکتا برای مجروح‌ها
 
     // شمارش‌ها برای HUD
-    private static int rescuedCount = 0;
-    private static int deadCount = 0;
+    private static volatile int rescuedCount = 0;
+    private static volatile int deadCount = 0;
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(new Runnable() {
@@ -87,6 +94,26 @@ public class Main {
                     hud.updateHUD(ScoreManager.getScore(), rescuedCount, deadCount, timeLeft[0],
                             cityMap, rescuers, victims);
 
+                    // 5.1) راه‌اندازی موتور بازی برای امکانات Save/Load
+                    AgentManager agentManager = new AgentManager();
+                    for (Rescuer r : rescuers) { agentManager.addRescuer(r); }
+                    VictimManager victimManager = new VictimManager();
+                    for (Injured v : victims) { victimManager.addInjured(v); }
+                    List<Hospital> hospitals = new ArrayList<Hospital>();
+                    RescueCoordinator rescueCoordinator = new RescueCoordinator(
+                            agentManager,
+                            victimManager,
+                            hospitals,
+                            cityMap,
+                            collisionMap,
+                            new AStarPathFinder(cityMap),
+                            new InjuryPrioritySelector()
+                    );
+                    GameState gameState = new GameState(cityMap, rescuers, victims, hospitals, ScoreManager.getScore());
+                    final GameEngine engine = new GameEngine(gameState, rescueCoordinator, agentManager, victimManager,
+                            hud, panel, hud.getMiniMapPanel(), new Logger("logs/game.log", true));
+                    hud.setGameEngine(engine);
+
                     // 6) کنترل کیبورد (بدون لامبدا)
                     DecisionInterface decision = new DecisionInterface() {
                         @Override
@@ -102,8 +129,9 @@ public class Main {
                         }
                     };
 
-                    // KeyHandler با HUD (۸ آرگومان)
-                    KeyHandler kh = new KeyHandler(rescuers, r1, decision, cityMap, collisionMap, panel, victims, hud);
+                    // KeyHandler با HUD و موتور بازی
+                    KeyHandler kh = new KeyHandler(rescuers, r1, decision, cityMap, collisionMap, panel, victims, hud, engine);
+                    engine.setKeyHandler(kh);
                     panel.addKeyListener(kh);
                     kh.setVehicleCollision(collisionMap); // اگر خواستی آزاد باشد: kh.setVehicleCollision(null);
 
@@ -118,50 +146,72 @@ public class Main {
                     f.setVisible(true);
                     panel.requestFocusInWindow();
 
-                    // 8) تایمر رندر سبک
-                    javax.swing.Timer repaintTimer = new javax.swing.Timer(80, new ActionListener() {
-                        @Override public void actionPerformed(ActionEvent e) {
-                            panel.repaint();
-                        }
-                    });
-                    repaintTimer.start();
-
-                    // 9) تایمر منطقیِ مجروح‌ها + HUD هر ۱ ثانیه
-                    javax.swing.Timer victimTimer = new javax.swing.Timer(1000, new ActionListener() {
-                        @Override public void actionPerformed(ActionEvent e) {
-                            // کم کردن زمان
-                            if (timeLeft[0] > 0) {
-                                timeLeft[0]--;
-                            }
-
-                            // تیک تایمر و تشخیص مرگ‌ها
-                            for (int i = 0; i < victims.size(); i++) {
-                                Injured v = victims.get(i);
-                                if (v == null) continue;
-                                if (!v.isRescued() && !v.isDead()) {
-                                    boolean diedNow = v.updateAndCheckDeath();
-                                    if (diedNow) {
-                                        deadCount++;
-                                        ScoreManager.applyDeathPenalty(v);
-                                    }
+                    // 8) حلقه‌ی رندر در یک Thread جداگانه
+                    Thread repaintThread = new Thread(new Runnable() {
+                        @Override public void run() {
+                            try {
+                                while (true) {
+                                    SwingUtilities.invokeLater(new Runnable() {
+                                        @Override public void run() { panel.repaint(); }
+                                    });
+                                    Thread.sleep(80);
                                 }
+                            } catch (InterruptedException ex) {
+                                Thread.currentThread().interrupt();
                             }
-
-                            // شمارش نجات‌یافته‌ها
-                            int resc = 0;
-                            for (int i = 0; i < victims.size(); i++) {
-                                Injured v = victims.get(i);
-                                if (v != null && v.isRescued()) resc++;
-                            }
-                            rescuedCount = resc;
-
-                            // HUD با مینی‌مپ آپدیت میشه
-                            hud.updateHUD(ScoreManager.getScore(), rescuedCount, deadCount, timeLeft[0],
-                                    cityMap, rescuers, victims);
-                            panel.repaint();
                         }
                     });
-                    victimTimer.start();
+                    repaintThread.setDaemon(true);
+                    repaintThread.start();
+
+                    // 9) حلقه‌ی منطق مجروح‌ها + HUD هر ۱ ثانیه در Thread
+                    Thread victimThread = new Thread(new Runnable() {
+                        @Override public void run() {
+                            try {
+                                while (true) {
+                                    SwingUtilities.invokeLater(new Runnable() {
+                                        @Override public void run() {
+                                            // کم کردن زمان
+                                            if (timeLeft[0] > 0) {
+                                                timeLeft[0]--;
+                                            }
+
+                                            // تیک تایمر و تشخیص مرگ‌ها
+                                            for (int i = 0; i < victims.size(); i++) {
+                                                Injured v = victims.get(i);
+                                                if (v == null) continue;
+                                                if (!v.isRescued() && !v.isDead()) {
+                                                    boolean diedNow = v.updateAndCheckDeath();
+                                                    if (diedNow) {
+                                                        deadCount++;
+                                                        ScoreManager.applyDeathPenalty(v);
+                                                    }
+                                                }
+                                            }
+
+                        // شمارش نجات‌یافته‌ها
+                                            int resc = 0;
+                                            for (int i = 0; i < victims.size(); i++) {
+                                                Injured v = victims.get(i);
+                                                if (v != null && v.isRescued()) resc++;
+                                            }
+                                            rescuedCount = resc;
+
+                                            // HUD با مینی‌مپ آپدیت میشه
+                                            hud.updateHUD(ScoreManager.getScore(), rescuedCount, deadCount, timeLeft[0],
+                                                    cityMap, rescuers, victims);
+                                            panel.repaint();
+                                        }
+                                    });
+                                    Thread.sleep(1000);
+                                }
+                            } catch (InterruptedException ex) {
+                                Thread.currentThread().interrupt();
+                            }
+                        }
+                    });
+                    victimThread.setDaemon(true);
+                    victimThread.start();
 
                 } catch (Exception ex) {
                     ex.printStackTrace();
