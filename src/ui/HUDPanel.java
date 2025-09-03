@@ -76,7 +76,9 @@ public class HUDPanel extends JPanel {
         btnLoad    = createIconButton("assets/ui/load.png",    "Quick Load", "Load");
         btnRestart = createIconButton("assets/ui/restart.png", "Restart",    "Restart");
         btnAddAI   = createIconButton("assets/ui/escape.png",  "Add AI",     "AI");
+
         ensureAddAIIcon();
+
         wireNonPauseButtons();
         addButtonsToBar();
     }
@@ -246,6 +248,7 @@ public class HUDPanel extends JPanel {
                 try { gameEngine.spawnAIRescuer(); } catch (Throwable t) { t.printStackTrace(); }
             }
         });
+
     }
 
     /** اطمینان از اینکه دکمه AI همیشه یک آیکن دارد */
@@ -269,6 +272,7 @@ public class HUDPanel extends JPanel {
         g.drawLine(4, mid, size - 4, mid);
         g.dispose();
         return new ImageIcon(img);
+
     }
 
     // ------------------- هِلپر ساخت دکمه آیکن‌دار -------------------
