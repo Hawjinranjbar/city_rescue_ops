@@ -132,6 +132,7 @@ public class Main {
                     // KeyHandler با HUD و موتور بازی
                     KeyHandler kh = new KeyHandler(rescuers, r1, decision, cityMap, collisionMap, panel, victims, hud, engine);
                     engine.setKeyHandler(kh);
+
                     panel.addKeyListener(kh);
                     kh.setVehicleCollision(collisionMap); // اگر خواستی آزاد باشد: kh.setVehicleCollision(null);
 
