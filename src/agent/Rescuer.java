@@ -13,10 +13,22 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
+ * --------------------
+ * لایه: Domain Layer — package agent
+ * --------------------
  * مدل نجات‌دهنده + مدیریت اسپرایت/انیمیشن + حالت آمبولانس.
  * جهت‌ها: 0=DOWN, 1=LEFT, 2=RIGHT, 3=UP
+ *
+ * شیت 3×4 (۳ ردیف، ۴ ستون): به ترتیب ردیف‌ها:
+ *   r=0 → DOWN ، r=1 → LEFT ، r=2 → RIGHT   (UP نداریم، از DOWN کپی می‌شود)
  */
 public class Rescuer {
+
+    // ====== ثابت‌های جهت ======
+    public static final int DIR_DOWN  = 0;
+    public static final int DIR_LEFT  = 1;
+    public static final int DIR_RIGHT = 2;
+    public static final int DIR_UP    = 3;
 
     // ====== وضعیت منطقی عامل ======
     private final int id;
@@ -25,9 +37,15 @@ public class Rescuer {
     private Injured carryingVictim;
     private boolean ambulanceMode;
 
+    /** اگر true باشد، نجات‌دهنده می‌تواند روی هر سلولی حرکت کند (نادیده گرفتن collision/occupied/hospital) */
+    private boolean noClip = true; // فقط روی Rescuer اثر دارد؛ آمبولانس را تغییر نمی‌دهد
+
+    /** فریز سراسری برای Pause/Resume (حین Save/Load) */
+    private boolean paused = false;
+
     // ====== گرافیک/انیمیشن – ریسکیور ======
     private BufferedImage[][] rescuerFrames;                // [dir][frame]
-    private int direction = 0;                              // 0=DOWN,1=LEFT,2=RIGHT,3=UP
+    private int direction = DIR_DOWN;                      // 0=DOWN,1=LEFT,2=RIGHT,3=UP
     private int currentFrame = 0;
     private final Map<Integer, BufferedImage[][]> rescuerScaledCache = new HashMap<Integer, BufferedImage[][]>();
     private static final int RESCUER_COLS = 4;
@@ -43,6 +61,7 @@ public class Rescuer {
     private int AMB_FRAME_W = 64;
     private int AMB_FRAME_H = 64;
 
+    // ====== سازنده ======
     public Rescuer(int id, Position startPos) {
         this.id = id;
         this.position = (startPos != null) ? startPos : new Position(0, 0);
@@ -53,6 +72,7 @@ public class Rescuer {
         loadAmbulanceSpriteSheet();
     }
 
+    // ====== بارگذاری شیتِ ریسکیور ======
     private void loadRescuerSpriteSheet() {
         BufferedImage sheet = AssetLoader.loadImage(RESCUER_SPRITE_PATH);
         if (sheet == null) {
@@ -77,32 +97,41 @@ public class Rescuer {
                 if (sx + RESCUER_FRAME_W <= cropped.getWidth() && sy + RESCUER_FRAME_H <= cropped.getHeight()) {
                     BufferedImage raw = cropped.getSubimage(sx, sy, RESCUER_FRAME_W, RESCUER_FRAME_H);
                     BufferedImage clear = AssetLoader.makeColorTransparent(raw, bg, tolerance);
-                    rescuerFrames[r][c] = clear; // 0=DOWN,1=LEFT,2=RIGHT
+
+                    // نگاشت استاندارد: r=0(DOWN), r=1(LEFT), r=2(RIGHT)
+                    if (r == 0) {
+                        rescuerFrames[DIR_DOWN][c] = clear;
+                    } else if (r == 1) {
+                        rescuerFrames[DIR_LEFT][c] = clear;
+                    } else {
+                        rescuerFrames[DIR_RIGHT][c] = clear;
+                    }
                 }
             }
         }
 
         // اگر ردیف LEFT موجود نبود، از RIGHT وارونه بساز
-        if ((rescuerFrames[1] == null || rescuerFrames[1][0] == null) && rescuerFrames[2] != null) {
+        if ((rescuerFrames[DIR_LEFT] == null || rescuerFrames[DIR_LEFT][0] == null) && rescuerFrames[DIR_RIGHT] != null) {
             BufferedImage[] leftRow = new BufferedImage[RESCUER_COLS];
             for (int c = 0; c < RESCUER_COLS; c++) {
-                if (rescuerFrames[2][c] != null) {
-                    leftRow[c] = AssetLoader.flipHorizontal(rescuerFrames[2][c]);
+                if (rescuerFrames[DIR_RIGHT][c] != null) {
+                    leftRow[c] = AssetLoader.flipHorizontal(rescuerFrames[DIR_RIGHT][c]);
                 }
             }
-            rescuerFrames[1] = leftRow;
+            rescuerFrames[DIR_LEFT] = leftRow;
         }
 
         // اگر ردیف UP نبود، از DOWN کپی کن
-        if (rescuerFrames[3] == null || rescuerFrames[3][0] == null) {
+        if (rescuerFrames[DIR_UP] == null || rescuerFrames[DIR_UP][0] == null) {
             BufferedImage[] upRow = new BufferedImage[RESCUER_COLS];
-            for (int c = 0; c < RESCUER_COLS; c++) upRow[c] = rescuerFrames[0][c];
-            rescuerFrames[3] = upRow;
+            for (int c = 0; c < RESCUER_COLS; c++) upRow[c] = rescuerFrames[DIR_DOWN][c];
+            rescuerFrames[DIR_UP] = upRow;
         }
 
         rescuerScaledCache.clear();
     }
 
+    // ====== بارگذاری شیتِ آمبولانس ======
     private void loadAmbulanceSpriteSheet() {
         BufferedImage sheet = AssetLoader.loadImage(AMBULANCE_SPRITE_PATH);
         if (sheet == null) {
@@ -132,18 +161,18 @@ public class Rescuer {
 
         ambulanceFrames = new BufferedImage[4][1];
 
-        // در برخی شیت‌ها برچسب چپ/راست جا‌به‌جا است؛ با این پرچم اصلاح می‌کنیم.
+        // اگر چپ/راست برعکس دیده می‌شود این را true بگذار
         final boolean SWAP_LR = true;
 
-        ambulanceFrames[0][0] = front; // DOWN
+        ambulanceFrames[DIR_DOWN][0] = front; // DOWN
         if (SWAP_LR) {
-            ambulanceFrames[1][0] = right; // LEFT  ← جا‌به‌جا
-            ambulanceFrames[2][0] = left;  // RIGHT ← جا‌به‌جا
+            ambulanceFrames[DIR_LEFT][0]  = right; // LEFT  ← جابجا
+            ambulanceFrames[DIR_RIGHT][0] = left;  // RIGHT ← جابجا
         } else {
-            ambulanceFrames[1][0] = left;  // LEFT
-            ambulanceFrames[2][0] = right; // RIGHT
+            ambulanceFrames[DIR_LEFT][0]  = left;
+            ambulanceFrames[DIR_RIGHT][0] = right;
         }
-        ambulanceFrames[3][0] = back;  // UP
+        ambulanceFrames[DIR_UP][0] = back;  // UP
 
         ambulanceScaledCache.clear();
     }
@@ -165,25 +194,81 @@ public class Rescuer {
         return v;
     }
 
-    // ----- API منطقی -----
+    // ====== API منطقی ======
     public int getId() { return id; }
     public Position getPosition() { return position; }
-    public void setPosition(Position newPos) { if (newPos != null) this.position = newPos; }
+
+    /** X/Y کاشی فعلی (برای ذخیره‌سازی سبک) */
+    public int getTileX() { return position != null ? position.getX() : 0; }
+    public int getTileY() { return position != null ? position.getY() : 0; }
+
+    public void setPosition(Position newPos) {
+        if (newPos != null) this.position = newPos;
+    }
+
+    /** تنظیم موقعیت به مختصات کاشی */
+    public void setTile(int x, int y) {
+        setPositionXY(x, y);
+    }
+
     public void setPositionXY(int x, int y) {
         if (this.position == null) this.position = new Position(x, y);
         else { this.position.setX(x); this.position.setY(y); }
     }
+
+    /**
+     * تعیین جهت از روی دلتا حرکت برای اطمینان از رندر صحیح سمت چپ.
+     * اگر حرکتی نبود، جهت ورودی حفظ می‌شود تا ایستاده‌بودن هم درست نمایش داده شود.
+     */
     public void onMoveStep(int newX, int newY, int dir) {
+        if (paused) return; // در حالت فریز حرکت/انیمیشن نکن
+        int oldX = (this.position != null) ? this.position.getX() : newX;
+        int oldY = (this.position != null) ? this.position.getY() : newY;
+        int dx = newX - oldX;
+        int dy = newY - oldY;
+
         setPositionXY(newX, newY);
-        setDirection(dir);
+
+        if (dx < 0) {
+            this.direction = DIR_LEFT;
+        } else if (dx > 0) {
+            this.direction = DIR_RIGHT;
+        } else if (dy < 0) {
+            this.direction = DIR_UP;
+        } else if (dy > 0) {
+            this.direction = DIR_DOWN;
+        } else {
+            setDirection(dir);
+        }
+
         nextFrame();
     }
+
     public boolean isBusy() { return isBusy; }
+    public void setBusy(boolean busy) { this.isBusy = busy; }
+
     public boolean isCarryingVictim() { return carryingVictim != null; }
     public Injured getCarryingVictim() { return carryingVictim; }
-    public boolean isAmbulanceMode() { return ambulanceMode; }
 
-    /** ورود به حالت آمبولانس هنگام نزدیک شدن به مجروح. */
+    public boolean isAmbulanceMode() { return ambulanceMode; }
+    /** تنظیم مستقیم حالت آمبولانس (برای Load). */
+    public void setAmbulanceMode(boolean enabled) {
+        if (this.ambulanceMode == enabled) return;
+        this.ambulanceMode = enabled;
+        if (!enabled) {
+            // خروج از حالت: وضعیت‌ها ریست می‌شن ولی قربانی رها نمی‌شود مگر detach صدا زده شود
+            resetAnim();
+        } else {
+            // ورود به حالت: انیمیشن صفر
+            resetAnim();
+        }
+    }
+
+    /** فلگ no-clip فقط برای حرکتِ خود Rescuer (نه Vehicle). */
+    public boolean isNoClip() { return noClip; }
+    public void setNoClip(boolean noClip) { this.noClip = noClip; }
+
+    // ====== عملیات حمل/تحویل ======
     public void enterAmbulanceModeWith(Injured victim) {
         if (victim == null || ambulanceMode) return;
         this.carryingVictim = victim;
@@ -193,32 +278,39 @@ public class Rescuer {
         resetAnim();
     }
 
-    /**
-     * تحویل در بیمارستان:
-     * - قربانی rescued می‌شود
-     * - امتیاز = ۲ × زمانِ باقی‌مانده‌ی فعلی
-     * - خروج از حالت آمبولانس
-     */
+    /** معادل attachVictim برای سازگاری با Apply از روی DTO */
+    public void attachVictim(Injured victim) {
+        if (victim == null) return;
+        this.carryingVictim = victim;
+        this.isBusy = true;
+        try { victim.setBeingRescued(true); } catch (Throwable ignored) {}
+        // حالت آمبولانس را به caller وا می‌گذاریم؛ اگر لازم است:
+        // this.ambulanceMode = true;
+        resetAnim();
+    }
+
+    public void detachVictimIfAny() {
+        if (this.carryingVictim != null) {
+            try { this.carryingVictim.setBeingRescued(false); } catch (Throwable ignored) {}
+        }
+        this.carryingVictim = null;
+        this.isBusy = false;
+        // خروج از آمبولانس به عهده‌ی caller است؛ اینجا تغییر نمی‌دهیم
+        resetAnim();
+    }
+
     public void deliverVictimAtHospital() {
         if (carryingVictim == null) return;
-
-        // ثبت نجات
         carryingVictim.markAsRescued();
-        try { carryingVictim.setBeingRescued(false); } catch (Throwable ignored) {}
-
-        // امتیاز: دو برابر زمان باقی‌مانده‌ی فعلی
-        int remaining = 0;
-        try { remaining = Math.max(0, carryingVictim.getRemainingTime()); } catch (Throwable ignored) {}
-        ScoreManager.add(2 * remaining);
-
-        // پاک‌سازی وضعیت
+        int initial = safeInitialTime(carryingVictim);
+        if (initial < 0) initial = 0;
+        ScoreManager.add(2 * initial);
         carryingVictim = null;
         isBusy = false;
         ambulanceMode = false;
         resetAnim();
     }
 
-    /** لغو حالت وسط راه (یا ریست سناریو). */
     public void cancelAmbulanceMode() {
         if (!ambulanceMode) return;
         if (carryingVictim != null) {
@@ -230,8 +322,10 @@ public class Rescuer {
         resetAnim();
     }
 
-    // ----- گرافیک/انیمیشن -----
-    public void setDirection(int dir) { this.direction = clamp(dir, 0, 3); }
+    // ====== گرافیک/انیمیشن ======
+    public void setDirection(int dir) {
+        this.direction = clamp(dir, 0, 3);
+    }
     public void faceTo(int dir) { setDirection(dir); }
     public int getDirection() { return direction; }
 
@@ -302,6 +396,7 @@ public class Rescuer {
     }
 
     public void nextFrame() {
+        if (paused) return;
         if (ambulanceMode) return; // آمبولانس فریم راه‌رفتن ندارد
         if (rescuerFrames == null) return;
         int dir = clamp(direction, 0, 3);
@@ -311,7 +406,7 @@ public class Rescuer {
 
     public void resetAnim() { currentFrame = 0; }
 
-    /** محدودسازی حرکت روی جاده در حالت آمبولانس */
+    /** محدودسازی حرکت روی جاده در حالت آمبولانس (این همان منطقِ Vehicle است و تغییری نکرده) */
     public boolean isRoadOnlyMode() { return ambulanceMode; }
 
     private int safeInitialTime(Injured v) {
@@ -328,5 +423,17 @@ public class Rescuer {
             if (sev == InjurySeverity.LOW)      return 180;
         } catch (Throwable ignored2) { }
         return 0;
+    }
+
+    // ====== سازگاری با Thread-base: Pause/Resume ======
+
+    /** فریز منطق حرکت/انیمیشن این نجات‌دهنده (حین Save/Load) */
+    public void pause() {
+        this.paused = true;
+    }
+
+    /** ادامهٔ منطق پس از فریز */
+    public void resume() {
+        this.paused = false;
     }
 }

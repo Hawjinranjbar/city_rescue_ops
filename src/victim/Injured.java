@@ -9,9 +9,10 @@ import util.Timer;
  * --------------------
  * نمایندهٔ یک مجروح روی نقشه:
  * - موقعیت، شدت جراحت، تایمر نجات
- * - وضعیت‌ها: نجات‌شده / مرده / در حال نجات
+ * - وضعیت‌ها: نجات‌شده / مرده / در حال نجات / بحرانی
  * - پشتیبانی از ناپدید شدن پس از مرگ/نجات (visible=false)
  * - نگهداری "زمان اولیهٔ تایمر" برای محاسبهٔ جریمهٔ مرگ (۲×زمان اولیه)
+ * - سازگار با Save/Load/Restart (pause/resume/setRemainingTime/markAsAlive/markAsCritical)
  */
 public class Injured {
 
@@ -21,8 +22,8 @@ public class Injured {
     private static final int TIME_CRITICAL_DEFAULT = 60;
 
     private final int id;                  // شناسه یکتا
-    private final Position position;       // مختصات روی نقشه
-    private final InjurySeverity severity; // شدت جراحت
+    private final Position position;       // مختصات روی نقشه (مرجع نهایی؛ برای Load معمولاً با نمونه جدید جایگزین می‌شود)
+    private final InjurySeverity severity; // شدت جراحت (LOW/MEDIUM/CRITICAL)
     private final Timer rescueTimer;       // تایمر فرصت نجات
     private final int initialTimeLimit;    // زمان اولیهٔ تایمر (برای HUD/جریمه)
 
@@ -30,6 +31,7 @@ public class Injured {
     private boolean isDead;                // آیا مرده؟
     private boolean beingRescued;          // آیا در حال عملیات نجات است؟
     private boolean visible;               // کنترل رندر (بعد از مرگ/نجات false)
+    private boolean critical;              // وضعیت بحرانی (مجزا از enum شدت برای همسویی با اسنپ‌شات)
 
     // --- سازنده با زمان مشخص ---
     public Injured(int id, Position position, InjurySeverity severity, int timeLimit) {
@@ -42,6 +44,7 @@ public class Injured {
         this.isDead = false;
         this.beingRescued = false;
         this.visible = true;
+        this.critical = (severity == InjurySeverity.CRITICAL); // پیش‌فرض: اگر شدت CRITICAL باشد، critical=true
     }
 
     // --- سازنده با زمان پیش‌فرض بر اساس شدت ---
@@ -55,7 +58,7 @@ public class Injured {
         return TIME_LOW_DEFAULT;
     }
 
-    // ===================== تایمر =====================
+    // ===================== تایمر/به‌روزرسانی =====================
     /** کاهش یک تیک از تایمر (برای رفرش HUD یا منطق گیم‌لوپ) */
     public void tick() {
         if (isRescued || isDead) return;
@@ -98,13 +101,16 @@ public class Injured {
         return (float) rem / (float) total;
     }
 
-    // ===================== وضعیت‌ها =====================
     public boolean isRescued() { return isRescued; }
     public boolean isDead() { return isDead; }
     public boolean isBeingRescued() { return beingRescued; }
     public void setBeingRescued(boolean beingRescued) { this.beingRescued = beingRescued; }
     public boolean isVisible() { return visible; }
 
+    /** وضعیت بحرانی (مجزا از enum شدت جراحت) */
+    public boolean isCritical() { return critical; }
+
+    // ===================== وضعیت‌ها =====================
     /** علامت‌گذاری به‌عنوان نجات‌یافته + ناپدید شدن از صحنه */
     public void markAsRescued() {
         if (isDead) return;
@@ -123,6 +129,20 @@ public class Injured {
         rescueTimer.stop();
     }
 
+    /** بازگردانی به وضعیت زنده (برای Load از اسنپ‌شات که alive=true دارد) */
+    public void markAsAlive() {
+        isDead = false;
+        isRescued = false;
+        // beingRescued را دست نمی‌زنیم تا از بیرون تنظیم شود
+        visible = true;
+        // تایمر را استارت نمی‌کنیم؛ کنترل باقی‌مانده با setRemainingTime انجام می‌شود
+    }
+
+    /** علامت‌گذاری به‌عنوان بحرانی (مجزا از enum) */
+    public void markAsCritical() {
+        this.critical = true;
+    }
+
     // ===================== محاسبات امتیاز =====================
     /**
      * جریمهٔ مرگ بر مبنای قانون پروژه:
@@ -138,5 +158,27 @@ public class Injured {
     /** آیا این مجروح هنوز قابل نجات است؟ */
     public boolean canBeRescued() {
         return !isRescued && !isDead && !beingRescued && !rescueTimer.isFinished();
+    }
+
+    // ===================== هماهنگی با Save/Load/Restart =====================
+
+    /** فریزِ تایمر (برای Save/Load) */
+    public void pause() {
+        try { rescueTimer.pause(); } catch (Throwable ignored) { }
+    }
+
+    /** ازسرگیری تایمر پس از Load/Restart */
+    public void resume() {
+        if (!isDead && !isRescued) {
+            try { rescueTimer.resume(); } catch (Throwable ignored) { }
+        }
+    }
+
+    /**
+     * ست‌کردن مستقیم زمان باقی‌مانده (برای Load از اسنپ‌شات).
+     * مقدار منفی به ۰ بریده می‌شود.
+     */
+    public void setRemainingTime(int remaining) {
+        try { rescueTimer.setRemainingTime(remaining); } catch (Throwable ignored) { }
     }
 }

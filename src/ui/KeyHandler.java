@@ -2,6 +2,7 @@ package ui;
 
 import agent.Rescuer;
 import agent.Vehicle;
+import controller.GameEngine;
 import controller.ScoreManager;
 import map.Cell;
 import map.CityMap;
@@ -13,26 +14,28 @@ import victim.Injured;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.util.ArrayDeque;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Queue;
-import java.util.Set;
 
 /**
  * ورودی کیبورد + منطق حمل/تحویل:
  * - شروع حمل: تلپورت به نزدیک‌ترین «جادهٔ آزاد» و اسپاون آمبولانس
  * - حرکت آمبولانس فقط روی RoadMask
  * - تحویل در «مجاورت HospitalMask»: آمبولانس ناپدید، امتیاز (۲×زمانِ باقی‌مانده)، HUD فوری
+ * - شورتکات‌ها: F5=QuickSave, F9=QuickLoad, R=Restart (با GameEngine)
  */
 public class KeyHandler extends KeyAdapter {
 
+    // ---- Engine (اختیاری برای Save/Load/Restart) ----
+    private GameEngine gameEngine;
+
     // ---- Rescuer ----
-    private final List<Rescuer> allRescuers;
+    private List<Rescuer> allRescuers;
     private Rescuer currentRescuer;
     private final DecisionInterface decisionInterface;
 
     // ---- Map / Collision ----
-    private final CityMap map;
+    private CityMap map;
     private final CollisionMap collisionMap; // برای Rescuer
 
     // ---- UI ----
@@ -45,8 +48,10 @@ public class KeyHandler extends KeyAdapter {
     private CollisionMap vehicleCollision = null;
 
     // ---- Victims ----
-    private final List<Injured> victims;
+    private List<Injured> victims;
     private Injured transportingVictim = null;
+
+    // -------------------- سازنده‌ها --------------------
 
     public KeyHandler(List<Rescuer> rescuers,
                       Rescuer initialRescuer,
@@ -56,6 +61,19 @@ public class KeyHandler extends KeyAdapter {
                       GamePanel panel,
                       List<Injured> victims,
                       HUDPanel hud) {
+        this(rescuers, initialRescuer, decisionInterface, map, collisionMap, panel, victims, hud, null);
+    }
+
+    /** سازندهٔ افزوده‌شده: با GameEngine برای شورتکات‌های Save/Load/Restart */
+    public KeyHandler(List<Rescuer> rescuers,
+                      Rescuer initialRescuer,
+                      DecisionInterface decisionInterface,
+                      CityMap map,
+                      CollisionMap collisionMap,
+                      GamePanel panel,
+                      List<Injured> victims,
+                      HUDPanel hud,
+                      GameEngine engine) {
         this.allRescuers = rescuers;
         this.currentRescuer = initialRescuer;
         this.decisionInterface = decisionInterface;
@@ -64,6 +82,33 @@ public class KeyHandler extends KeyAdapter {
         this.panel = panel;
         this.victims = victims;
         this.hud = hud;
+        this.gameEngine = engine;
+    }
+
+    /** اگر بعداً Engine آماده شد، می‌توانی تزریقش کنی. */
+    public void setGameEngine(GameEngine engine) {
+        this.gameEngine = engine;
+    }
+
+    /**
+     * وقتی جهان بازی بعد از Load/Restart عوض شد، با این متد
+     * مرجع‌های داخلی KeyHandler را هم‌تراز کن.
+     */
+    public void onWorldReloaded(List<Rescuer> newRescuers,
+                                Rescuer newCurrent,
+                                List<Injured> newVictims,
+                                CityMap newMap) {
+        if (newRescuers != null) this.allRescuers = newRescuers;
+        if (newCurrent != null)  this.currentRescuer = newCurrent;
+        if (newVictims != null)  this.victims = newVictims;
+        if (newMap != null)      this.map = newMap;
+
+        // خودرو را قطع می‌کنیم تا کنترل به حالت پیاده برگردد
+        transportingVictim = null;
+        controlVehicle = false;
+        attachVehicle(null);
+
+        if (panel != null) panel.repaint();
     }
 
     // اتصال/تنظیم ماشین
@@ -76,8 +121,32 @@ public class KeyHandler extends KeyAdapter {
 
     @Override
     public void keyPressed(KeyEvent e) {
-        boolean moved = false;
         int code = e.getKeyCode();
+
+        // ---------- شورتکات‌های Global: Save / Load / Restart ----------
+        if (code == KeyEvent.VK_F5) { // Quick Save
+            if (gameEngine != null) {
+                try { gameEngine.saveQuick(); } catch (Throwable ignored) { }
+            }
+            if (panel != null) panel.repaint();
+            return;
+        }
+        if (code == KeyEvent.VK_F9) { // Quick Load
+            if (gameEngine != null) {
+                try { gameEngine.loadQuick(); } catch (Throwable ignored) { }
+            }
+            if (panel != null) panel.repaint();
+            return;
+        }
+        if (code == KeyEvent.VK_R) {  // Restart
+            if (gameEngine != null) {
+                try { gameEngine.restartGame(); } catch (Throwable ignored) { }
+            }
+            if (panel != null) panel.repaint();
+            return;
+        }
+
+        boolean moved = false;
 
         // ---------- کنترل Vehicle ----------
         if (controlVehicle && vehicle != null) {

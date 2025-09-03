@@ -1,174 +1,206 @@
 package ui;
 
 import agent.Rescuer;
+// import map.Cell;  // دیگر نیازی نیست چون بک‌گراند نقشه را نمی‌کشیم
 import map.CityMap;
-import map.Cell;
 import util.Position;
 import victim.Injured;
 import victim.InjurySeverity;
 
 import javax.swing.*;
+import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.util.List;
 
 /**
- * --------------------
- * لایه: UI Layer — MiniMapPanel
- * --------------------
- * مینی‌مپ ساده با رسم تایل‌ها و نمایش:
- * - مجروح‌ها: دایره‌ی کوچک
- *      CRITICAL = قرمز
- *      MEDIUM   = آبی
- *      LOW      = سفید
- * - نجات‌دهنده‌ها: دایره‌ی فیروزه‌ای
- *
- * نکته: همه‌ی switchها به سبک قدیمی نوشته شده‌اند (بدون ->).
+ * MiniMapPanel — enlarged map and legend with minimal padding.
+ * - Map box: 220 x 220 px
+ * - Legend is tall (70 px), shows Low/Medium/High/Rescuer
+ * - Victims = circles, Rescuer = square
+ * - INNER_PADDING reduced to 8 so panel hugs edges
+ * - **Background of the map area is now flat BLACK (no tile rendering)**
  */
 public class MiniMapPanel extends JPanel {
+
+    // --- Sizes ---
+    private static final int MINIMAP_W = 220;
+    private static final int MINIMAP_H = 220;
+    private static final int INNER_PADDING = 8;   // reduced inner padding
+    private static final int LEGEND_H = 70;
+
+    // Legend styling
+    private static final Font LEGEND_FONT  = new Font("Arial", Font.BOLD, 11);
+    private static final int  LEGEND_DOT_R = 5;
+    private static final int  LEGEND_SQ    = 11;
+    private static final int  LEGEND_ITEM_GAP = 14;
+    private static final int  LEGEND_ROW_GAP  = 8;
+
+    // Map markers
+    private static final int VICTIM_R = 4;
+    private static final int RESC_S   = 10;
 
     private CityMap cityMap;
     private List<Rescuer> rescuers;
     private List<Injured> victims;
 
-    // اندازه هر تایل روی مینی‌مپ
-    private final int tileSize = 6;
-
-    // رنگ‌های پایه‌ی نقشه (دلخواه و قابل تغییر)
-    private static final Color ROAD_COLOR      = Color.LIGHT_GRAY;
-    private static final Color OBSTACLE_COLOR  = Color.DARK_GRAY;
-    private static final Color BUILDING_COLOR  = new Color(120, 81, 57);
-    private static final Color HOSPITAL_COLOR  = new Color(30, 200, 30);
-    private static final Color EMPTY_COLOR     = Color.BLACK;
-
-    // رنگ مارکرها
-    private static final Color RESCUER_COLOR   = Color.CYAN;
-    private static final Color VICTIM_CRIT     = Color.RED;
-    private static final Color VICTIM_MED      = Color.BLUE;
-    private static final Color VICTIM_LOW      = Color.WHITE;
-    private static final Color MARKER_OUTLINE  = Color.BLACK;
+    private float scaleX = 1f;
+    private float scaleY = 1f;
 
     public MiniMapPanel(CityMap cityMap, List<Rescuer> rescuers, List<Injured> victims) {
+        setOpaque(true);
+        setBackground(Color.BLACK);
+        setBorder(new EmptyBorder(INNER_PADDING, INNER_PADDING, INNER_PADDING, INNER_PADDING));
+
+        int w = MINIMAP_W + INNER_PADDING * 2;
+        int h = MINIMAP_H + LEGEND_H + INNER_PADDING * 2;
+        setPreferredSize(new Dimension(w, h));
+
         this.cityMap = cityMap;
         this.rescuers = rescuers;
         this.victims = victims;
 
-        setOpaque(true);
-        setBackground(Color.BLACK);
-
-        int w = cityMap != null ? cityMap.getWidth() * tileSize : 200;
-        int h = cityMap != null ? cityMap.getHeight() * tileSize : 150;
-        setPreferredSize(new Dimension(w, h));
+        if (cityMap != null && cityMap.getWidth() > 0 && cityMap.getHeight() > 0) {
+            scaleX = (float) MINIMAP_W / (float) cityMap.getWidth();
+            scaleY = (float) MINIMAP_H / (float) cityMap.getHeight();
+        }
     }
 
     @Override
     protected void paintComponent(Graphics g0) {
         super.paintComponent(g0);
-
-        if (cityMap == null) return;
-
         Graphics2D g = (Graphics2D) g0.create();
-        // برای دایره‌های نرم‌تر
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-        // --- رسم بکگراند نقشه بر اساس نوع Cell
-        for (int y = 0; y < cityMap.getHeight(); y++) {
-            for (int x = 0; x < cityMap.getWidth(); x++) {
-                Cell cell = cityMap.getCell(x, y);
-                if (cell == null) continue;
+        int ox = INNER_PADDING;
+        int oy = INNER_PADDING;
 
-                // switch کلاسیک
-                switch (cell.getType()) {
-                    case ROAD:
-                        g.setColor(ROAD_COLOR);
-                        break;
-                    case OBSTACLE:
-                        g.setColor(OBSTACLE_COLOR);
-                        break;
-                    case BUILDING:
-                        g.setColor(BUILDING_COLOR);
-                        break;
-                    case HOSPITAL:
-                        g.setColor(HOSPITAL_COLOR);
-                        break;
-                    case EMPTY:
-                    default:
-                        g.setColor(EMPTY_COLOR);
-                        break;
-                }
+        // --- BACKGROUND: flat black rectangle (no map/tiles)
+        g.setColor(Color.BLACK);
+        g.fillRect(ox, oy, MINIMAP_W, MINIMAP_H);
 
-                g.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
-            }
-        }
+        // Border around map (می‌تونی اگر نخواستی حذفش کنی)
+        g.setColor(new Color(255, 255, 255, 80));
+        g.drawRect(ox - 1, oy - 1, MINIMAP_W + 1, MINIMAP_H + 1);
 
-        // شعاع مارکر (دایره‌ی کوچک داخل هر تایل)
-        int r = Math.max(2, (tileSize / 2) - 1);
-        int d = r * 2;
-
-        // --- رسم مجروح‌ها (دایره‌های کوچک رنگی)
+        // --- Victims (circles)
+        int dVictim = VICTIM_R * 2;
         if (victims != null) {
-            for (int i = 0; i < victims.size(); i++) {
-                Injured injured = victims.get(i);
-                if (injured == null) continue;
-                if (injured.isDead() || injured.isRescued()) continue;
+            for (Injured v : victims) {
+                if (v == null || v.isDead() || v.isRescued()) continue;
+                Position p = v.getPosition();
+                if (p == null) continue;
 
-                Position pos = injured.getPosition();
-                if (pos == null) continue;
+                // تبدیل مختصات گرید به پیکسل روی باکس مشکی
+                int cx = ox + Math.round(p.getX() * scaleX);
+                int cy = oy + Math.round(p.getY() * scaleY);
 
-                int cx = pos.getX() * tileSize + (tileSize / 2) - r;
-                int cy = pos.getY() * tileSize + (tileSize / 2) - r;
+                Color body, outline;
+                InjurySeverity sev = v.getSeverity();
+                if (sev == InjurySeverity.CRITICAL) { body = Color.RED; outline = Color.WHITE; }
+                else if (sev == InjurySeverity.MEDIUM) { body = Color.BLUE; outline = Color.WHITE; }
+                else { body = Color.WHITE; outline = Color.BLACK; }
 
-                Color color;
-                InjurySeverity sev = injured.getSeverity();
-                if (sev == InjurySeverity.CRITICAL) {
-                    color = VICTIM_CRIT;
-                } else if (sev == InjurySeverity.MEDIUM) {
-                    color = VICTIM_MED;
-                } else {
-                    color = VICTIM_LOW; // LOW
-                }
-
-                g.setColor(color);
-                g.fillOval(cx, cy, d, d);
-
-                // حاشیه برای خوانایی روی پس‌زمینه‌های روشن یا تیره
-                g.setColor(MARKER_OUTLINE);
-                g.drawOval(cx, cy, d, d);
+                g.setColor(body);
+                g.fillOval(cx - VICTIM_R, cy - VICTIM_R, dVictim, dVictim);
+                g.setColor(outline);
+                g.drawOval(cx - VICTIM_R, cy - VICTIM_R, dVictim, dVictim);
             }
         }
 
-        // --- رسم نجات‌دهنده‌ها (دایره‌ی فیروزه‌ای)
+        // --- Rescuers (squares)
         if (rescuers != null) {
-            for (int i = 0; i < rescuers.size(); i++) {
-                Rescuer rescuer = rescuers.get(i);
-                if (rescuer == null) continue;
+            for (Rescuer r : rescuers) {
+                if (r == null || r.getPosition() == null) continue;
 
-                Position pos = rescuer.getPosition();
-                if (pos == null) continue;
+                int cx = ox + Math.round(r.getPosition().getX() * scaleX);
+                int cy = oy + Math.round(r.getPosition().getY() * scaleY);
 
-                int cx = pos.getX() * tileSize + (tileSize / 2) - r;
-                int cy = pos.getY() * tileSize + (tileSize / 2) - r;
-
-                g.setColor(RESCUER_COLOR);
-                g.fillOval(cx, cy, d, d);
-
-                g.setColor(MARKER_OUTLINE);
-                g.drawOval(cx, cy, d, d);
+                int half = RESC_S / 2;
+                g.setColor(Color.CYAN);
+                g.fillRect(cx - half, cy - half, RESC_S, RESC_S);
+                g.setColor(Color.BLACK);
+                g.drawRect(cx - half, cy - half, RESC_S, RESC_S);
             }
         }
+
+        // Title (اگر نمی‌خوایش حذف کن)
+        g.setFont(new Font("Arial", Font.BOLD, 13));
+        g.setColor(Color.WHITE);
+        g.drawString("MiniMap", ox + (MINIMAP_W / 2) - 30, oy - 10);
+
+        // Legend
+        drawLegendResponsive(g, ox, oy + MINIMAP_H + 8, MINIMAP_W, LEGEND_H - 12);
 
         g.dispose();
     }
 
-    // به‌روزرسانی داده‌های مینی‌مپ
+    private void drawLegendResponsive(Graphics2D g, int x, int y, int w, int h) {
+        g.setColor(new Color(0, 0, 0, 190));
+        g.fillRoundRect(x, y, w, h, 10, 10);
+        g.setColor(new Color(255, 255, 255, 70));
+        g.drawRoundRect(x, y, w, h, 10, 10);
+
+        g.setFont(LEGEND_FONT);
+        int rowBase = y + h / 2 - 8;
+        int cursor = x + 12;
+        int maxX = x + w - 12;
+
+        cursor = placeLegendItem(g, cursor, rowBase, "Low", Color.WHITE, Color.BLACK, false, maxX);
+        cursor = placeLegendItem(g, cursor, rowBase, "Medium", Color.BLUE, Color.WHITE, false, maxX);
+        cursor = placeLegendItem(g, cursor, rowBase, "High", Color.RED, Color.WHITE, false, maxX);
+
+        int estResc = estimateItemWidth(g, "Rescuer");
+        if (cursor + estResc > maxX) {
+            rowBase += LEGEND_ROW_GAP + 14;
+            cursor = x + 12;
+        }
+        placeLegendItem(g, cursor, rowBase, "Rescuer", Color.CYAN, Color.BLACK, true, maxX);
+    }
+
+    private int placeLegendItem(Graphics2D g, int cx, int cy, String label,
+                                Color body, Color outline, boolean square, int maxX) {
+        int start = cx;
+
+        if (square) {
+            int half = LEGEND_SQ / 2;
+            g.setColor(body);
+            g.fillRect(cx, cy - half, LEGEND_SQ, LEGEND_SQ);
+            g.setColor(outline);
+            g.drawRect(cx, cy - half, LEGEND_SQ, LEGEND_SQ);
+            cx += LEGEND_SQ + 6;
+        } else {
+            int r = LEGEND_DOT_R, d = r * 2;
+            g.setColor(body);
+            g.fillOval(cx, cy - r, d, d);
+            g.setColor(outline);
+            g.drawOval(cx, cy - r, d, d);
+            cx += d + 6;
+        }
+
+        g.setColor(Color.WHITE);
+        g.drawString(label, cx, cy + 5);
+
+        int textW = g.getFontMetrics().stringWidth(label);
+        int itemW = (cx - start) + textW + LEGEND_ITEM_GAP;
+        if (start + itemW > maxX) itemW = maxX - start;
+
+        return start + itemW;
+    }
+
+    private int estimateItemWidth(Graphics2D g, String label) {
+        int textW = g.getFontMetrics(LEGEND_FONT).stringWidth(label);
+        int iconW = Math.max(LEGEND_SQ, LEGEND_DOT_R * 2);
+        return iconW + 6 + textW + LEGEND_ITEM_GAP;
+    }
+
     public void updateMiniMap(CityMap cityMap, List<Rescuer> rescuers, List<Injured> victims) {
         this.cityMap = cityMap;
         this.rescuers = rescuers;
         this.victims = victims;
 
-        // اطمینان از اندازه‌ی درست پنل در صورت تغییر اندازه‌ی نقشه
-        if (cityMap != null) {
-            setPreferredSize(new Dimension(cityMap.getWidth() * tileSize, cityMap.getHeight() * tileSize));
-            revalidate();
+        if (cityMap != null && cityMap.getWidth() > 0 && cityMap.getHeight() > 0) {
+            scaleX = (float) MINIMAP_W / (float) cityMap.getWidth();
+            scaleY = (float) MINIMAP_H / (float) cityMap.getHeight();
         }
         repaint();
     }

@@ -1,3 +1,5 @@
+
+
 import agent.Rescuer;
 import controller.ScoreManager;
 import map.Cell;
@@ -25,6 +27,12 @@ import java.util.List;
 import java.util.Queue;
 import java.util.Random;
 
+/**
+ * نقطه شروع برنامه (بدون لامبدا).
+ * - HUDPanel شامل MiniMapPanel است.
+ * - RoadMask و HospitalMask از TMX خوانده می‌شوند.
+ * - تایمر HUD هر ثانیه آپدیت می‌شود.
+ */
 public class Main {
 
     private static final String TMX_PATH = "assets/maps/rescue_city.tmx";
@@ -39,7 +47,7 @@ public class Main {
             @Override public void run() {
                 try {
                     // 1) لود نقشه از TMX
-                    CityMap cityMap = MapLoader.loadTMX(TMX_PATH);
+                    final CityMap cityMap = MapLoader.loadTMX(TMX_PATH);
 
                     // 1.1) RoadMask و HospitalMask را از TMX بخوان و داخل CityMap ست کن
                     ensureRoadMaskLoadedFromTMX(cityMap, TMX_PATH);
@@ -58,8 +66,8 @@ public class Main {
                     }
 
                     // 3) ساخت Rescuer + اشغال
-                    List<Rescuer> rescuers = new ArrayList<Rescuer>();
-                    Rescuer r1 = new Rescuer(1, spawn);
+                    final List<Rescuer> rescuers = new ArrayList<Rescuer>();
+                    final Rescuer r1 = new Rescuer(1, spawn);
                     rescuers.add(r1);
                     cityMap.setOccupied(spawn.getX(), spawn.getY(), true);
 
@@ -72,10 +80,12 @@ public class Main {
                     panel.setDebugWalkable(false);
                     panel.setFocusable(true);
 
-                    // امتیاز اولیه
+                    // امتیاز اولیه + HUD با MiniMap
                     ScoreManager.resetToDefault();
-                    final HUDPanel hud = new HUDPanel();
-                    hud.updateHUD(ScoreManager.getScore(), rescuedCount, deadCount);
+                    final int[] timeLeft = new int[]{300}; // ۵ دقیقه شروع
+                    final HUDPanel hud = new HUDPanel(cityMap, rescuers, victims);
+                    hud.updateHUD(ScoreManager.getScore(), rescuedCount, deadCount, timeLeft[0],
+                            cityMap, rescuers, victims);
 
                     // 6) کنترل کیبورد (بدون لامبدا)
                     DecisionInterface decision = new DecisionInterface() {
@@ -116,9 +126,14 @@ public class Main {
                     });
                     repaintTimer.start();
 
-                    // 9) تایمر منطقیِ مجروح‌ها: هر ۱ ثانیه (بدون پاداشِ دوباره؛ پاداش در لحظهٔ تحویل داده می‌شود)
+                    // 9) تایمر منطقیِ مجروح‌ها + HUD هر ۱ ثانیه
                     javax.swing.Timer victimTimer = new javax.swing.Timer(1000, new ActionListener() {
                         @Override public void actionPerformed(ActionEvent e) {
+                            // کم کردن زمان
+                            if (timeLeft[0] > 0) {
+                                timeLeft[0]--;
+                            }
+
                             // تیک تایمر و تشخیص مرگ‌ها
                             for (int i = 0; i < victims.size(); i++) {
                                 Injured v = victims.get(i);
@@ -140,8 +155,9 @@ public class Main {
                             }
                             rescuedCount = resc;
 
-                            // HUD را با امتیاز سراسری به‌روز کن
-                            hud.updateHUD(ScoreManager.getScore(), rescuedCount, deadCount);
+                            // HUD با مینی‌مپ آپدیت میشه
+                            hud.updateHUD(ScoreManager.getScore(), rescuedCount, deadCount, timeLeft[0],
+                                    cityMap, rescuers, victims);
                             panel.repaint();
                         }
                     });
@@ -169,6 +185,7 @@ public class Main {
             return null;
         }
     }
+
 
     /** RoadMask را از TMX می‌خواند و در CityMap ست می‌کند (CSV → int[][] → setRoadMaskFromInts). */
     private static void ensureRoadMaskLoadedFromTMX(CityMap map, String tmxPath) {

@@ -17,6 +17,7 @@ import java.time.format.DateTimeFormatter;
  *  - سطح لاگ: INFO/WARN/ERROR
  *  - ساخت خودکار پوشهٔ مقصد فایل
  *  - هِلپرهای اختصاصی برای مکانیک آمبولانس/نجات/جریمه/پاداش
+ *  - هِلپرهای اختصاصی برای Save/Load/Restart
  */
 public class Logger {
 
@@ -31,10 +32,11 @@ public class Logger {
 
     // سازنده: مسیر فایل لاگ و اینکه خروجی روی کنسول هم چاپ بشه یا نه
     public Logger(String filePath, boolean toConsole) {
-        if (filePath == null || filePath.trim().length() == 0) {
-            filePath = "logs/game.log";
+        String p = filePath;
+        if (p == null || p.trim().length() == 0) {
+            p = "logs/game.log";
         }
-        this.logFilePath = filePath.replace('\\', '/');
+        this.logFilePath = p.replace('\\', '/');
         this.toConsole = toConsole;
         ensureParentDirExists(this.logFilePath);
     }
@@ -43,6 +45,8 @@ public class Logger {
     public synchronized void setConsoleEnabled(boolean enabled) {
         this.toConsole = enabled;
     }
+
+    // ==================== API سازگار قبلی ====================
 
     /** متد سادهٔ قبلی: سطح پیش‌فرض INFO */
     public synchronized void log(String message) {
@@ -55,11 +59,29 @@ public class Logger {
         write(level, message);
     }
 
-    /** ثبت خطا با استثناء */
+    /** ثبت خطا با استثناء (نسخهٔ قدیمی) */
     public synchronized void logError(String where, Exception e) {
         String msg = "[EXCEPTION] at " + safe(where) + " → " + (e != null ? e.getClass().getSimpleName() + ": " + safe(e.getMessage()) : "null");
         write(ERROR, msg);
     }
+
+    // ==================== شُرتکات‌های جدیدِ سطح‌ها ====================
+
+    public synchronized void logInfo(String message) {
+        write(INFO, message);
+    }
+
+    public synchronized void logWarn(String message) {
+        write(WARN, message);
+    }
+
+    /** ثبت خطا با Throwable (سازگارتر) */
+    public synchronized void logError(String where, Throwable t) {
+        String msg = "[EXCEPTION] at " + safe(where) + " → " + (t != null ? t.getClass().getSimpleName() + ": " + safe(t.getMessage()) : "null");
+        write(ERROR, msg);
+    }
+
+    // ==================== هِلپرهای گیم‌پلیِ نجات/آمبولانس ====================
 
     /** شروع بازی/ماموریت */
     public synchronized void logGameStart(int mapWidth, int mapHeight, int hospitalsCount, int initialScore) {
@@ -111,7 +133,38 @@ public class Logger {
         write(INFO, sb.toString());
     }
 
+    // ==================== هِلپرهای اختصاصی Save/Load/Restart ====================
+
+    public synchronized void logSaveSuccess(String path) {
+        write(INFO, "SAVE OK → file=\"" + safe(path) + "\"");
+    }
+
+    public synchronized void logSaveFailed(String path, Throwable t) {
+        write(ERROR, "SAVE FAILED → file=\"" + safe(path) + "\"; err=" + errMsg(t));
+    }
+
+    public synchronized void logLoadSuccess(String path) {
+        write(INFO, "LOAD OK → file=\"" + safe(path) + "\"");
+    }
+
+    public synchronized void logLoadFailed(String path, Throwable t) {
+        write(ERROR, "LOAD FAILED → file=\"" + safe(path) + "\"; err=" + errMsg(t));
+    }
+
+    public synchronized void logQuickSave(String path) {
+        write(INFO, "QUICK SAVE → file=\"" + safe(path) + "\"");
+    }
+
+    public synchronized void logQuickLoad(String path) {
+        write(INFO, "QUICK LOAD → file=\"" + safe(path) + "\"");
+    }
+
+    public synchronized void logRestartTriggered() {
+        write(INFO, "RESTART requested → applying initial state");
+    }
+
     // ==================== پیاده‌سازی اصلی نوشتن ====================
+
     private synchronized void write(String level, String message) {
         String ts = LocalDateTime.now().format(fmt);
         String threadName = Thread.currentThread().getName();
@@ -137,8 +190,15 @@ public class Logger {
     }
 
     // ==================== هِلپرها ====================
+
     private static String safe(String s) {
         return s == null ? "null" : s;
+    }
+
+    private static String errMsg(Throwable t) {
+        if (t == null) return "null";
+        String m = t.getMessage();
+        return t.getClass().getSimpleName() + (m != null && m.length() > 0 ? (": " + m) : "");
     }
 
     private static String pos(Position p) {

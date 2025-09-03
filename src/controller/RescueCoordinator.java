@@ -20,6 +20,7 @@ import java.util.List;
  * --------------------
  * هماهنگ‌کننده‌ی عملیات نجات بین عامل‌ها، مجروح‌ها و بیمارستان‌ها.
  * - برای هر Rescuer، لیست جدیدی از قربانیانِ قابل نجات می‌گیرد و به AgentController می‌سپارد.
+ * - پشتیبانی از Pause/Resume برای سازگاری با Save/Load.
  * - هیچ لامبدایی استفاده نشده.
  */
 public class RescueCoordinator {
@@ -57,5 +58,19 @@ public class RescueCoordinator {
             List<Injured> candidates = victimManager.getRescuableVictims();
             agentController.performAction(r, candidates, hospitals);
         }
+    }
+
+    // ----------------------------------------------------------------
+    // پشتیبانی Save/Load/Restart → Pause/Resume
+    // ----------------------------------------------------------------
+    public void pauseAll() {
+        try { agentManager.pauseAll(); } catch (Throwable ignore) { }
+        try { victimManager.pauseAll(); } catch (Throwable ignore) { }
+        // AgentController فعلاً state فعال ندارد؛ در آینده اگر Thread داشت، همین‌جا pause شود.
+    }
+
+    public void resumeAll() {
+        try { victimManager.resumeAll(); } catch (Throwable ignore) { }
+        try { agentManager.resumeAll(); } catch (Throwable ignore) { }
     }
 }
