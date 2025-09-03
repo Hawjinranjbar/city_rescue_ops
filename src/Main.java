@@ -16,8 +16,6 @@ import victim.InjurySeverity;
 
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -39,8 +37,8 @@ public class Main {
     private static int nextVictimId = 1; // شناسه یکتا برای مجروح‌ها
 
     // شمارش‌ها برای HUD
-    private static int rescuedCount = 0;
-    private static int deadCount = 0;
+    private static volatile int rescuedCount = 0;
+    private static volatile int deadCount = 0;
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(new Runnable() {
@@ -118,50 +116,72 @@ public class Main {
                     f.setVisible(true);
                     panel.requestFocusInWindow();
 
-                    // 8) تایمر رندر سبک
-                    javax.swing.Timer repaintTimer = new javax.swing.Timer(80, new ActionListener() {
-                        @Override public void actionPerformed(ActionEvent e) {
-                            panel.repaint();
-                        }
-                    });
-                    repaintTimer.start();
-
-                    // 9) تایمر منطقیِ مجروح‌ها + HUD هر ۱ ثانیه
-                    javax.swing.Timer victimTimer = new javax.swing.Timer(1000, new ActionListener() {
-                        @Override public void actionPerformed(ActionEvent e) {
-                            // کم کردن زمان
-                            if (timeLeft[0] > 0) {
-                                timeLeft[0]--;
-                            }
-
-                            // تیک تایمر و تشخیص مرگ‌ها
-                            for (int i = 0; i < victims.size(); i++) {
-                                Injured v = victims.get(i);
-                                if (v == null) continue;
-                                if (!v.isRescued() && !v.isDead()) {
-                                    boolean diedNow = v.updateAndCheckDeath();
-                                    if (diedNow) {
-                                        deadCount++;
-                                        ScoreManager.applyDeathPenalty(v);
-                                    }
+                    // 8) حلقه‌ی رندر در یک Thread جداگانه
+                    Thread repaintThread = new Thread(new Runnable() {
+                        @Override public void run() {
+                            try {
+                                while (true) {
+                                    SwingUtilities.invokeLater(new Runnable() {
+                                        @Override public void run() { panel.repaint(); }
+                                    });
+                                    Thread.sleep(80);
                                 }
+                            } catch (InterruptedException ex) {
+                                Thread.currentThread().interrupt();
                             }
-
-                            // شمارش نجات‌یافته‌ها
-                            int resc = 0;
-                            for (int i = 0; i < victims.size(); i++) {
-                                Injured v = victims.get(i);
-                                if (v != null && v.isRescued()) resc++;
-                            }
-                            rescuedCount = resc;
-
-                            // HUD با مینی‌مپ آپدیت میشه
-                            hud.updateHUD(ScoreManager.getScore(), rescuedCount, deadCount, timeLeft[0],
-                                    cityMap, rescuers, victims);
-                            panel.repaint();
                         }
                     });
-                    victimTimer.start();
+                    repaintThread.setDaemon(true);
+                    repaintThread.start();
+
+                    // 9) حلقه‌ی منطق مجروح‌ها + HUD هر ۱ ثانیه در Thread
+                    Thread victimThread = new Thread(new Runnable() {
+                        @Override public void run() {
+                            try {
+                                while (true) {
+                                    SwingUtilities.invokeLater(new Runnable() {
+                                        @Override public void run() {
+                                            // کم کردن زمان
+                                            if (timeLeft[0] > 0) {
+                                                timeLeft[0]--;
+                                            }
+
+                                            // تیک تایمر و تشخیص مرگ‌ها
+                                            for (int i = 0; i < victims.size(); i++) {
+                                                Injured v = victims.get(i);
+                                                if (v == null) continue;
+                                                if (!v.isRescued() && !v.isDead()) {
+                                                    boolean diedNow = v.updateAndCheckDeath();
+                                                    if (diedNow) {
+                                                        deadCount++;
+                                                        ScoreManager.applyDeathPenalty(v);
+                                                    }
+                                                }
+                                            }
+
+                        // شمارش نجات‌یافته‌ها
+                                            int resc = 0;
+                                            for (int i = 0; i < victims.size(); i++) {
+                                                Injured v = victims.get(i);
+                                                if (v != null && v.isRescued()) resc++;
+                                            }
+                                            rescuedCount = resc;
+
+                                            // HUD با مینی‌مپ آپدیت میشه
+                                            hud.updateHUD(ScoreManager.getScore(), rescuedCount, deadCount, timeLeft[0],
+                                                    cityMap, rescuers, victims);
+                                            panel.repaint();
+                                        }
+                                    });
+                                    Thread.sleep(1000);
+                                }
+                            } catch (InterruptedException ex) {
+                                Thread.currentThread().interrupt();
+                            }
+                        }
+                    });
+                    victimThread.setDaemon(true);
+                    victimThread.start();
 
                 } catch (Exception ex) {
                     ex.printStackTrace();
