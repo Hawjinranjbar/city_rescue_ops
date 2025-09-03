@@ -17,7 +17,7 @@ public class PlayerInputHandler implements DecisionInterface {
     @Override
     public Injured chooseVictim(Rescuer rescuer, List<Injured> candidates) {
         // انتخاب اولین مجروح (برای حالت کنسولی یا تست ساده)
-        if (candidates.isEmpty()) return null;
+        if (candidates == null || candidates.isEmpty()) return null;
 
         // در آینده: می‌تونی این رو با ورودی کاربر یا ui تکمیل کنی
         return candidates.get(0);
@@ -25,7 +25,7 @@ public class PlayerInputHandler implements DecisionInterface {
 
     @Override
     public Rescuer switchToNextRescuer(Rescuer currentRescuer, List<Rescuer> allRescuers) {
-        if (allRescuers.isEmpty()) return null;
+        if (allRescuers == null || allRescuers.isEmpty()) return null;
 
         // پیدا کردن اندیس فعلی و رفتن به بعدی
         int index = allRescuers.indexOf(currentRescuer);
