@@ -115,6 +115,53 @@ public class GameEngine {
         this.keyHandler = handler;
     }
 
+    // --- اسپاون نجات‌دهندهٔ هوش مصنوعی از HUD ---
+    public void spawnAIRescuer() {
+        CityMap map = state.getMap();
+        List<Rescuer> rescuerList = state.getRescuers();
+        if (map == null || rescuerList == null) return;
+
+        Position spawn = findSpawnTile(map, rescuerList);
+        int newId = agentManager.size() + 1;
+        Rescuer ai = new Rescuer(newId, spawn);
+        ai.setAIControlled(true);
+        rescuerList.add(ai);
+        agentManager.addRescuer(ai);
+        map.setOccupied(spawn.getX(), spawn.getY(), true);
+        prevAmbulanceState.put(ai.getId(), Boolean.FALSE);
+
+        if (miniMapPanel != null) {
+            miniMapPanel.updateMiniMap(map, rescuerList, state.getVictims());
+        }
+        if (gamePanel != null) gamePanel.repaint();
+        if (hudPanel != null) hudPanel.repaint();
+
+        start();
+    }
+
+    private Position findSpawnTile(CityMap map, List<Rescuer> rescuers) {
+        if (rescuers != null && !rescuers.isEmpty()) {
+            Position base = rescuers.get(0).getPosition();
+            int[] dx = {0, 1, 0, -1};
+            int[] dy = {1, 0, -1, 0};
+            for (int i = 0; i < dx.length; i++) {
+                int nx = base.getX() + dx[i];
+                int ny = base.getY() + dy[i];
+                if (map.isValid(nx, ny) && map.isRoad(nx, ny) && map.isWalkable(nx, ny)) {
+                    return new Position(nx, ny);
+                }
+            }
+        }
+        for (int y = 0; y < map.getHeight(); y++) {
+            for (int x = 0; x < map.getWidth(); x++) {
+                if (map.isRoad(x, y) && map.isWalkable(x, y)) {
+                    return new Position(x, y);
+                }
+            }
+        }
+        return new Position(0, 0);
+    }
+
     // ------------------------------
     // کنترل حلقه
     // ------------------------------

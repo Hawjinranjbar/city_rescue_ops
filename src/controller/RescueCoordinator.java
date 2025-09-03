@@ -55,6 +55,7 @@ public class RescueCoordinator {
     public void executeRescueCycle() {
         Collection<Rescuer> rescuers = agentManager.getAllRescuers();
         for (Rescuer r : rescuers) {
+            if (r == null || !r.isAIControlled()) continue;
             List<Injured> candidates = victimManager.getRescuableVictims();
             agentController.performAction(r, candidates, hospitals);
         }
