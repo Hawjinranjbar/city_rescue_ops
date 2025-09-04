@@ -319,6 +319,9 @@ public class AgentController {
             Position cur = q.removeFirst();
             if (map.isValid(cur.getX(), cur.getY())) {
                 Cell c = map.getCell(cur.getX(), cur.getY());
+
+                if (c != null && !c.isHospital() && isRoadCell(c) && !c.isOccupied()) return cur;
+
                 if (c != null && !c.isHospital() && isRoadCell(c)) return cur;
             }
             for (int k = 0; k < 4; k++) {
@@ -329,6 +332,11 @@ public class AgentController {
                 vis[ny][nx] = true;
                 Cell nc = map.getCell(nx, ny);
                 if (nc == null) continue;
+
+                if (nc.isOccupied()) continue;
+                if (!nc.isWalkable() && !isRoadCell(nc)) continue;
+                if (collisionMap != null && !collisionMap.isWalkable(nx, ny)) continue;
+
                 if (!nc.isWalkable() && !isRoadCell(nc)) continue;
                 q.addLast(new Position(nx, ny));
             }
