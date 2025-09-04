@@ -69,7 +69,8 @@ public class HUDPanel extends JPanel {
         setLayout(new BorderLayout());
         setBackground(BG);
         setForeground(FG);
-        setBorder(new EmptyBorder(HUD_GUTTER_PX, HUD_GUTTER_PX, HUD_GUTTER_PX, HUD_GUTTER_PX));
+        // فاصله‌ی کناری چپ را صفر می‌کنیم تا پنل بازی به HUD بچسبد
+        setBorder(new EmptyBorder(HUD_GUTTER_PX, 0, HUD_GUTTER_PX, HUD_GUTTER_PX));
 
         score = rescuedCount = deadCount = 0;
         timeLeft = 0;
@@ -168,6 +169,13 @@ public class HUDPanel extends JPanel {
     public void setTimeLeft(int seconds) {
         this.timeLeft = seconds < 0 ? 0 : seconds;
         repaint();
+    }
+
+    /**
+     * مقدار فعلی زمان باقی‌مانده را برمی‌گرداند (بر حسب ثانیه).
+     */
+    public int getTimeLeft() {
+        return timeLeft;
     }
 
     /** سنکرون‌سازی Pause از بیرون (مثلاً بعد از Resume/Restart) */

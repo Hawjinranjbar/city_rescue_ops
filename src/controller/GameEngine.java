@@ -377,6 +377,12 @@ public class GameEngine {
             } catch (Throwable ignored) {}
         }
 
+        // --- زمان باقی‌مانده بازی ---
+        if (hudPanel != null) {
+            try { hudPanel.setTimeLeft((int) (loaded.getRemainingMillis() / 1000L)); }
+            catch (Throwable ignored) {}
+        }
+
         // --- بازسازی قربانی‌ها از DTO ---
         Map<Integer, Injured> victimMap = new HashMap<Integer, Injured>();
         List<Injured> newVictims = new ArrayList<Injured>();
@@ -518,6 +524,13 @@ public class GameEngine {
                         map.getTileWidth(), map.getTileHeight()
                 );
             } catch (Throwable ignored) {}
+        }
+
+        // زمان باقی‌مانده بازی (بر حسب میلی‌ثانیه)
+        if (hudPanel != null) {
+            try {
+                snap.setRemainingMillis((long) hudPanel.getTimeLeft() * 1000L);
+            } catch (Throwable ignored) { }
         }
 
         // Rescuers
