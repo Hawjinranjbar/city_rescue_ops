@@ -145,6 +145,8 @@ public class Main {
                     f.setVisible(true);
                     panel.requestFocusInWindow();
 
+                    final boolean[] gameOverShown = new boolean[] { false };
+
                     // 8) حلقه‌ی رندر در یک Thread جداگانه
                     Thread repaintThread = new Thread(new Runnable() {
                         @Override public void run() {
@@ -153,6 +155,7 @@ public class Main {
                                     SwingUtilities.invokeLater(new Runnable() {
                                         @Override public void run() { panel.repaint(); }
                                     });
+                                    if (gameOverShown[0]) break;
                                     Thread.sleep(80);
                                 }
                             } catch (InterruptedException ex) {
@@ -201,8 +204,13 @@ public class Main {
                                             hud.updateHUD(ScoreManager.getScore(), rescuedCount, deadCount, hud.getTimeLeft(),
                                                     cityMap, rescuers, victims);
                                             panel.repaint();
+                                            if (!gameOverShown[0] && hud.getTimeLeft() <= 0) {
+                                                gameOverShown[0] = true;
+                                                showGameOver(f);
+                                            }
                                         }
                                     });
+                                    if (gameOverShown[0]) break;
                                     Thread.sleep(1000);
                                 }
                             } catch (InterruptedException ex) {
@@ -220,6 +228,18 @@ public class Main {
                 }
             }
         });
+    }
+
+    private static void showGameOver(JFrame f) {
+        JPanel p = new JPanel(new BorderLayout());
+        p.setBackground(Color.BLACK);
+        JLabel lbl = new JLabel("Game Over", SwingConstants.CENTER);
+        lbl.setForeground(Color.WHITE);
+        lbl.setFont(lbl.getFont().deriveFont(Font.BOLD, 48f));
+        p.add(lbl, BorderLayout.CENTER);
+        f.setContentPane(p);
+        f.revalidate();
+        f.repaint();
     }
 
     /** لود ایمن CollisionMap: در صورت خطا null برمی‌گرداند و cityMap را هم ست می‌کند. */
