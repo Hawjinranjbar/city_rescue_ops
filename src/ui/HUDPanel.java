@@ -23,6 +23,9 @@ public class HUDPanel extends JPanel {
 
     // ---------- Layout / Theme ----------
     private static final int HUD_GUTTER_PX = 8;
+    /** فاصله‌ی اضافه در پایین برای اینکه باکس ساعت کمی بالاتر بیاید */
+    private static final int HUD_BOTTOM_GAP_PX = 22; // ⇐ اگر زیاد/کم می‌خوای همین عدد رو تغییر بده
+
     private static final Color BG = new Color(12, 12, 12);
     private static final Color FG = new Color(235, 235, 235);
     private static final Color BAR_BG = new Color(22, 22, 22);
@@ -62,8 +65,14 @@ public class HUDPanel extends JPanel {
         setLayout(new BorderLayout());
         setBackground(BG);
         setForeground(FG);
-        // فاصله‌ی کناری چپ را صفر می‌کنیم تا پنل بازی به HUD بچسبد
-        setBorder(new EmptyBorder(HUD_GUTTER_PX, 0, HUD_GUTTER_PX, HUD_GUTTER_PX));
+
+        // چپ=0 تا HUD به پنل بازی بچسبد؛ پایین=بیشتر تا باکس ساعت بالاتر دیده شود
+        setBorder(new EmptyBorder(
+                HUD_GUTTER_PX,      // top
+                0,                  // left
+                HUD_BOTTOM_GAP_PX,  // bottom  ← تنها تغییر مهم
+                HUD_GUTTER_PX       // right
+        ));
 
         score = rescuedCount = deadCount = 0;
         timeLeft = 0;
@@ -91,12 +100,10 @@ public class HUDPanel extends JPanel {
         // Blink timer (هر 500ms)
         hudBlinkTimer = new javax.swing.Timer(500, new ActionListener() {
             @Override public void actionPerformed(ActionEvent e) {
-                // اگر زمان کم باشد، چشمک بزن
                 if (timeLeft <= 30) {
                     blinkOn = !blinkOn;
                     infoPanel.repaint();
                 } else if (!blinkOn) {
-                    // اگر از محدوده خطر خارج شد، روشن نگه داریم
                     blinkOn = true;
                     infoPanel.repaint();
                 }
@@ -158,12 +165,8 @@ public class HUDPanel extends JPanel {
         repaint();
     }
 
-    /**
-     * مقدار فعلی زمان باقی‌مانده را برمی‌گرداند (بر حسب ثانیه).
-     */
-    public int getTimeLeft() {
-        return timeLeft;
-    }
+    /** مقدار فعلی زمان باقی‌مانده را برمی‌گرداند (بر حسب ثانیه). */
+    public int getTimeLeft() { return timeLeft; }
 
     /** سنکرون‌سازی Pause از بیرون (مثلاً بعد از Resume/Restart) */
     public void setPaused(boolean paused) {
@@ -192,7 +195,6 @@ public class HUDPanel extends JPanel {
 
     // ---------- Buttons wiring ----------
     private void wireButtons() {
-        // Save
         btnSave.addActionListener(new ActionListener() {
             @Override public void actionPerformed(ActionEvent e) {
                 if (gameEngine == null) { System.out.println("[HUDPanel] Save clicked BUT gameEngine==null"); return; }
@@ -200,7 +202,6 @@ public class HUDPanel extends JPanel {
             }
         });
 
-        // Load
         btnLoad.addActionListener(new ActionListener() {
             @Override public void actionPerformed(ActionEvent e) {
                 if (gameEngine == null) { System.out.println("[HUDPanel] Load clicked BUT gameEngine==null"); return; }
@@ -208,7 +209,6 @@ public class HUDPanel extends JPanel {
             }
         });
 
-        // Restart
         btnRestart.addActionListener(new ActionListener() {
             @Override public void actionPerformed(ActionEvent e) {
                 if (gameEngine == null) { System.out.println("[HUDPanel] Restart clicked BUT gameEngine==null"); return; }
@@ -217,7 +217,6 @@ public class HUDPanel extends JPanel {
             }
         });
 
-        // Add AI
         btnAddAI.addActionListener(new ActionListener() {
             @Override public void actionPerformed(ActionEvent e) {
                 if (gameEngine == null) { System.out.println("[HUDPanel] AddAI clicked BUT gameEngine==null"); return; }
@@ -250,9 +249,8 @@ public class HUDPanel extends JPanel {
             int x = (getWidth() - timerFm.stringWidth(t)) / 2;
             int y = 40;
 
-            // Shadow
+            // Shadow / Blink
             if (timeLeft <= 30) {
-                // چشمک‌زن: وقتی blinkOn=false، فقط سایه را می‌بینی (افکت چشمک)
                 if (!blinkOn) {
                     g2.setColor(new Color(0, 0, 0, 100));
                     g2.drawString(t, x + 2, y + 2);
@@ -278,9 +276,7 @@ public class HUDPanel extends JPanel {
 
             // Stats row
             g2.setFont(new Font("Arial", Font.PLAIN, 15));
-            // Badge Rescued (سبز)
             drawBadge(g2, "Rescued: " + rescuedCount, 10, 94, OK);
-            // Badge Dead (قرمز)
             drawBadge(g2, "Dead: " + deadCount, 160, 94, WARN);
         }
 
@@ -317,7 +313,6 @@ public class HUDPanel extends JPanel {
         b.setText("");
         b.setHorizontalTextPosition(SwingConstants.RIGHT);
         b.setIconTextGap(6);
-        // اگر آیکن بنا به هر دلیلی نتوانست render شود، متن fallback را بگذاریم:
         Icon ic = b.getIcon();
         if (ic == null || ic.getIconWidth() <= 0) {
             b.setIcon(null);
@@ -350,14 +345,12 @@ public class HUDPanel extends JPanel {
 
             switch (glyph) {
                 case SAVE: {
-                    // فلoppy: بدنه + برچسب
                     g2.drawRoundRect((int)(s*0.12f), (int)(s*0.12f), (int)(s*0.76f), (int)(s*0.76f), 6, 6);
                     g2.fillRect((int)(s*0.24f), (int)(s*0.18f), (int)(s*0.44f), (int)(s*0.16f));
                     g2.drawRect((int)(s*0.20f), (int)(s*0.46f), (int)(s*0.60f), (int)(s*0.30f));
                     break;
                 }
                 case LOAD: {
-                    // پوشه + پیکان
                     g2.drawRoundRect((int)(s*0.14f), (int)(s*0.22f), (int)(s*0.72f), (int)(s*0.54f), 6, 6);
                     Polygon a = new Polygon();
                     a.addPoint((int)(s*0.50f), (int)(s*0.24f));
@@ -371,7 +364,6 @@ public class HUDPanel extends JPanel {
                     break;
                 }
                 case RESTART: {
-                    // فلش چرخان
                     int r = (int)(s*0.28f);
                     int cx = (int)(s*0.50f);
                     int cy = (int)(s*0.55f);
