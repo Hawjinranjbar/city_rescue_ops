@@ -87,9 +87,9 @@ public class Main {
 
                     // امتیاز اولیه + HUD با MiniMap
                     ScoreManager.resetToDefault();
-                    final int[] timeLeft = new int[]{180}; // ۳ دقیقه شروع
                     final HUDPanel hud = new HUDPanel(cityMap, rescuers, victims);
-                    hud.updateHUD(ScoreManager.getScore(), rescuedCount, deadCount, timeLeft[0],
+                    hud.setTimeLeft(180); // ۳ دقیقه شروع
+                    hud.updateHUD(ScoreManager.getScore(), rescuedCount, deadCount, hud.getTimeLeft(),
                             cityMap, rescuers, victims);
 
                     // 5.1) راه‌اندازی موتور بازی برای امکانات Save/Load
@@ -171,8 +171,9 @@ public class Main {
                                     SwingUtilities.invokeLater(new Runnable() {
                                         @Override public void run() {
                                             // کم کردن زمان
-                                            if (timeLeft[0] > 0) {
-                                                timeLeft[0]--;
+                                            int t = hud.getTimeLeft();
+                                            if (t > 0) {
+                                                hud.setTimeLeft(t - 1);
                                             }
 
                                             // تیک تایمر و تشخیص مرگ‌ها
@@ -197,7 +198,7 @@ public class Main {
                                             rescuedCount = resc;
 
                                             // HUD با مینی‌مپ آپدیت میشه
-                                            hud.updateHUD(ScoreManager.getScore(), rescuedCount, deadCount, timeLeft[0],
+                                            hud.updateHUD(ScoreManager.getScore(), rescuedCount, deadCount, hud.getTimeLeft(),
                                                     cityMap, rescuers, victims);
                                             panel.repaint();
                                         }
