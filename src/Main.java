@@ -41,6 +41,7 @@ import java.util.Random;
 public class Main {
 
     private static final String TMX_PATH = "assets/maps/rescue_city.tmx";
+    private static final int WIN_SCORE = 1200;
     private static int nextVictimId = 1; // شناسه یکتا برای مجروح‌ها
 
     // شمارش‌ها برای HUD
@@ -145,7 +146,7 @@ public class Main {
                     f.setVisible(true);
                     panel.requestFocusInWindow();
 
-                    final boolean[] gameOverShown = new boolean[] { false };
+                    final boolean[] endScreenShown = new boolean[] { false };
 
                     // 8) حلقه‌ی رندر در یک Thread جداگانه
                     Thread repaintThread = new Thread(new Runnable() {
@@ -155,7 +156,7 @@ public class Main {
                                     SwingUtilities.invokeLater(new Runnable() {
                                         @Override public void run() { panel.repaint(); }
                                     });
-                                    if (gameOverShown[0]) break;
+                                    if (endScreenShown[0]) break;
                                     Thread.sleep(80);
                                 }
                             } catch (InterruptedException ex) {
@@ -204,13 +205,18 @@ public class Main {
                                             hud.updateHUD(ScoreManager.getScore(), rescuedCount, deadCount, hud.getTimeLeft(),
                                                     cityMap, rescuers, victims);
                                             panel.repaint();
-                                            if (!gameOverShown[0] && hud.getTimeLeft() <= 0) {
-                                                gameOverShown[0] = true;
-                                                showGameOver(f);
+                                            if (!endScreenShown[0]) {
+                                                if (ScoreManager.getScore() >= WIN_SCORE) {
+                                                    endScreenShown[0] = true;
+                                                    showCongratulations(f);
+                                                } else if (hud.getTimeLeft() <= 0) {
+                                                    endScreenShown[0] = true;
+                                                    showGameOver(f);
+                                                }
                                             }
                                         }
                                     });
-                                    if (gameOverShown[0]) break;
+                                    if (endScreenShown[0]) break;
                                     Thread.sleep(1000);
                                 }
                             } catch (InterruptedException ex) {
@@ -235,6 +241,18 @@ public class Main {
         p.setBackground(Color.BLACK);
         JLabel lbl = new JLabel("Game Over", SwingConstants.CENTER);
         lbl.setForeground(Color.WHITE);
+        lbl.setFont(lbl.getFont().deriveFont(Font.BOLD, 48f));
+        p.add(lbl, BorderLayout.CENTER);
+        f.setContentPane(p);
+        f.revalidate();
+        f.repaint();
+    }
+
+    private static void showCongratulations(JFrame f) {
+        JPanel p = new JPanel(new BorderLayout());
+        p.setBackground(Color.WHITE);
+        JLabel lbl = new JLabel("Congratulations", SwingConstants.CENTER);
+        lbl.setForeground(Color.BLACK);
         lbl.setFont(lbl.getFont().deriveFont(Font.BOLD, 48f));
         p.add(lbl, BorderLayout.CENTER);
         f.setContentPane(p);
