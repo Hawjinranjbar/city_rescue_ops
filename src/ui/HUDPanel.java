@@ -56,7 +56,6 @@ public class HUDPanel extends JPanel {
     private GameEngine gameEngine;
 
     // Buttons (vector icons)
-    private final JButton btnPause;
     private final JButton btnSave;
     private final JButton btnLoad;
     private final JButton btnRestart;
@@ -89,7 +88,6 @@ public class HUDPanel extends JPanel {
 
         setPreferredSize(new Dimension(300, 280));
 
-        btnPause   = createVectorButton(Glyph.PAUSE,   "Pause / Resume", "Pause");
         btnSave    = createVectorButton(Glyph.SAVE,    "Quick Save",     "Save");
         btnLoad    = createVectorButton(Glyph.LOAD,    "Quick Load",     "Load");
         btnRestart = createVectorButton(Glyph.RESTART, "Restart",        "Restart");
@@ -97,7 +95,6 @@ public class HUDPanel extends JPanel {
 
         wireButtons();
 
-        controlBar.add(btnPause);
         controlBar.add(btnSave);
         controlBar.add(btnLoad);
         controlBar.add(btnRestart);
@@ -176,9 +173,6 @@ public class HUDPanel extends JPanel {
     /** سنکرون‌سازی Pause از بیرون (مثلاً بعد از Resume/Restart) */
     public void setPaused(boolean paused) {
         this.paused = paused;
-        if (btnPause != null) {
-            setGlyph(btnPause, paused ? Glyph.PLAY : Glyph.PAUSE, paused ? "Resume / Pause" : "Pause / Resume", paused ? "Resume" : "Pause");
-        }
         repaint();
     }
 
@@ -210,22 +204,6 @@ public class HUDPanel extends JPanel {
 
     // ---------- Buttons wiring ----------
     private void wireButtons() {
-        // Pause/Resume
-        btnPause.addActionListener(new ActionListener() {
-            @Override public void actionPerformed(ActionEvent e) {
-                if (gameEngine == null) { System.out.println("[HUDPanel] Pause clicked BUT gameEngine==null"); return; }
-                if (!paused) {
-                    try { gameEngine.stop(); } catch (Throwable ignored) {}
-                    paused = true;
-                    setGlyph(btnPause, Glyph.PLAY, "Resume / Pause", "Resume");
-                } else {
-                    try { gameEngine.start(); } catch (Throwable ignored) {}
-                    paused = false;
-                    setGlyph(btnPause, Glyph.PAUSE, "Pause / Resume", "Pause");
-                }
-            }
-        });
-
         // Save
         btnSave.addActionListener(new ActionListener() {
             @Override public void actionPerformed(ActionEvent e) {
@@ -358,7 +336,7 @@ public class HUDPanel extends JPanel {
     }
 
     // ---------- Vector Icons ----------
-    private enum Glyph { PAUSE, PLAY, SAVE, LOAD, RESTART, PLUS }
+    private enum Glyph { SAVE, LOAD, RESTART, PLUS }
 
     private JButton createVectorButton(Glyph glyph, String tooltip, String fallbackText) {
         JButton b = new JButton();
@@ -409,23 +387,6 @@ public class HUDPanel extends JPanel {
             float s = (float) size;
 
             switch (glyph) {
-                case PAUSE: {
-                    float w = s * 0.24f;
-                    float gap = s * 0.14f;
-                    float h = s * 0.72f;
-                    float top = (s - h) / 2f;
-                    g2.fill(new RoundRectangle2D.Float(s * 0.18f, top, w, h, 4, 4));
-                    g2.fill(new RoundRectangle2D.Float(s * 0.18f + w + gap, top, w, h, 4, 4));
-                    break;
-                }
-                case PLAY: {
-                    Polygon p = new Polygon();
-                    p.addPoint((int)(s*0.28f), (int)(s*0.20f));
-                    p.addPoint((int)(s*0.28f), (int)(s*0.80f));
-                    p.addPoint((int)(s*0.80f), (int)(s*0.50f));
-                    g2.fillPolygon(p);
-                    break;
-                }
                 case SAVE: {
                     // فلoppy: بدنه + برچسب
                     g2.drawRoundRect((int)(s*0.12f), (int)(s*0.12f), (int)(s*0.76f), (int)(s*0.76f), 6, 6);
