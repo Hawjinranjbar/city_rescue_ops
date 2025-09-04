@@ -380,6 +380,11 @@ public class Main {
             for (int x = 0; x < w; x++) {
                 Cell c = map.getCell(x, y);
                 if (c == null) continue;
+
+                // مجروح نباید روی بیمارستان ظاهر شود، چه از نوع HOSPITAL و چه در HospitalMask
+                if (c.getType() == Cell.Type.HOSPITAL) continue;
+                if (map.isHospitalMask(x, y)) continue;
+
                 if (c.getType() == Cell.Type.OBSTACLE && !c.isOccupied()) {
                     rubble.add(new Position(x, y));
                 }
