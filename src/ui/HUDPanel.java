@@ -11,14 +11,12 @@ import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.geom.RoundRectangle2D;
-import java.awt.image.BufferedImage;
 import java.util.List;
 
 /**
- * HUDPanel — MiniMap (اختیاری) + نوار کنترل + اطلاعات + Strategy Info
+ * HUDPanel — MiniMap (اختیاری) + نوار کنترل + اطلاعات
  * - آیکن‌ها 100% برداری با Java2D (بدون فایل تصویری)
  * - تایمر بزرگ با سایه و چشمک‌زن زیر 30 ثانیه
- * - نمایش نام الگوریتم‌های Strategy Layer (PathFinder و AgentDecision)
  * - بدون Lambda/Stream
  */
 public class HUDPanel extends JPanel {
@@ -42,15 +40,10 @@ public class HUDPanel extends JPanel {
     private boolean paused = false;
     private boolean blinkOn = true; // برای چشمک‌زدن تایمر
 
-    // Strategy names to display
-    private String pathFinderName = "—";
-    private String decisionName   = "—";
-
     // ---------- Subcomponents ----------
     private MiniMapPanel miniMapPanel;         // ممکن است null باشد
     private final JPanel controlBar;
     private final InfoPanel infoPanel;
-    private final StrategyPanel strategyPanel;
 
     // Engine
     private GameEngine gameEngine;
@@ -75,19 +68,13 @@ public class HUDPanel extends JPanel {
         score = rescuedCount = deadCount = 0;
         timeLeft = 0;
 
-        controlBar    = buildControlBar();
-        infoPanel     = new InfoPanel();
-        strategyPanel = new StrategyPanel();
+        controlBar = buildControlBar();
+        infoPanel = new InfoPanel();
 
         add(controlBar, BorderLayout.NORTH);
+        add(infoPanel, BorderLayout.SOUTH);
 
-        JPanel southStack = new JPanel(new GridLayout(2, 1, 0, 8));
-        southStack.setOpaque(false);
-        southStack.add(infoPanel);
-        southStack.add(strategyPanel);
-        add(southStack, BorderLayout.SOUTH);
-
-        setPreferredSize(new Dimension(300, 280));
+        setPreferredSize(new Dimension(300, 220));
 
         btnSave    = createVectorButton(Glyph.SAVE,    "Quick Save",     "Save");
         btnLoad    = createVectorButton(Glyph.LOAD,    "Quick Load",     "Load");
@@ -184,13 +171,6 @@ public class HUDPanel extends JPanel {
         repaint();
     }
 
-    /** نمایش نام استراتژی‌ها روی HUD */
-    public void setStrategyInfo(String pathFinderName, String decisionName) {
-        this.pathFinderName = (pathFinderName != null && pathFinderName.length() > 0) ? pathFinderName : "—";
-        this.decisionName   = (decisionName   != null && decisionName.length()   > 0) ? decisionName   : "—";
-        strategyPanel.repaint();
-    }
-
     // ---------- UI building ----------
     private JPanel buildControlBar() {
         JPanel bar = new JPanel();
@@ -265,11 +245,12 @@ public class HUDPanel extends JPanel {
 
             // Timer
             String t = "⏱  " + formatTime(timeLeft);
-            int x = 10;
+            g2.setFont(new Font("Arial", Font.BOLD, 36));
+            FontMetrics timerFm = g2.getFontMetrics();
+            int x = (getWidth() - timerFm.stringWidth(t)) / 2;
             int y = 40;
 
             // Shadow
-            g2.setFont(new Font("Arial", Font.BOLD, 36));
             if (timeLeft <= 30) {
                 // چشمک‌زن: وقتی blinkOn=false، فقط سایه را می‌بینی (افکت چشمک)
                 if (!blinkOn) {
@@ -291,7 +272,9 @@ public class HUDPanel extends JPanel {
             // Score
             g2.setFont(new Font("Arial", Font.BOLD, 18));
             g2.setColor(FG);
-            g2.drawString("Score: " + score, 10, 68);
+            String scoreText = "Score: " + score;
+            int scoreX = (getWidth() - g2.getFontMetrics().stringWidth(scoreText)) / 2;
+            g2.drawString(scoreText, scoreX, 68);
 
             // Stats row
             g2.setFont(new Font("Arial", Font.PLAIN, 15));
@@ -311,35 +294,6 @@ public class HUDPanel extends JPanel {
             g2.setColor(color);
             g2.draw(round);
             g2.drawString(text, x, y);
-        }
-    }
-
-    private class StrategyPanel extends JPanel {
-        StrategyPanel() {
-            setOpaque(true);
-            setBackground(CARD_BG);
-            setForeground(FG);
-            setBorder(new EmptyBorder(8, 10, 10, 10));
-            setPreferredSize(new Dimension(260, 80));
-        }
-
-        @Override
-        protected void paintComponent(Graphics g) {
-            super.paintComponent(g);
-            Graphics2D g2 = (Graphics2D) g;
-            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-
-            g2.setFont(new Font("Arial", Font.BOLD, 16));
-            g2.setColor(ACCENT);
-            g2.drawString("Strategy", 10, 22);
-
-            g2.setFont(new Font("Arial", Font.PLAIN, 14));
-            g2.setColor(FG);
-            g2.drawString("PathFinder:", 10, 48);
-            g2.drawString(pathFinderName, 100, 48);
-
-            g2.drawString("Decision:", 10, 70);
-            g2.drawString(decisionName, 100, 70);
         }
     }
 
